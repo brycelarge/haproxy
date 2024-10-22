@@ -1,0 +1,75 @@
+#!/usr/bin/with-contenv bash
+
+source /scripts/acme_functions.sh # issue_cert and deploy_cert functions
+source /scripts/debug.sh
+
+ACME_THUMBPRINT="/config/acme/ca/thumbprint"
+# Path to the HAProxy YAML configuration file
+HAPROXY_YAML="/config/haproxy.yaml"
+
+# Path to HAProxy certificates
+HAPROXY_CERTS_DIR="/etc/haproxy/certs"
+
+# Path to ACME certificates (adjust if needed)
+ACME_CERTS_DIR="/config/acme/certs"
+
+# Loop until both files exist
+while [ ! -f "$ACME_THUMBPRINT" ]; do
+    echo "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 3
+done
+
+echo "[acme] waiting for 30 seconds before starting to parse and issue certificates..." | ts '%Y-%m-%d %H:%M:%S'
+sleep 30; # make sure haproxy is up and stable
+
+# Function to extract domains from the YAML file
+extract_domains() {
+    yq e '.domain_mappings[].domain' "$HAPROXY_YAML" | sort | uniq
+}
+
+# Create an array of domains
+mapfile -t domains < <(extract_domains)
+
+# Print the number of domains found
+echo "[acme] Found ${#domains[@]} domains in your haproxy.yaml file, going through them to see if we need to issue or renew..." | ts '%Y-%m-%d %H:%M:%S'
+
+function check_for_missing_domain_certs() {
+    # Loop through the domains and process them
+    for domain in "${domains[@]}"; do
+        debug_log "Processing domain: $domain" | ts '%Y-%m-%d %H:%M:%S'
+
+        # Check if certificate is deployed in haproxy
+        if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
+            debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
+
+            # Check expiration
+            expiration=$(openssl x509 -enddate -noout -in "${HAPROXY_CERTS_DIR}/${domain}.pem" | cut -d= -f2)
+            debug_log "$domain Certificate expires on: $expiration" | ts '%Y-%m-%d %H:%M:%S'
+
+            # Add logic to renew if close to expiration
+            # For example:
+            if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
+                echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
+                renew_cert "$domain";
+            fi
+        else
+            # Check if certificate exists in ACME directory
+            if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
+                echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
+                deploy_cert "$domain";
+            else
+                echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                issue_cert "$domain";
+            fi
+        fi
+    done
+}
+
+check_for_missing_domain_certs
+
+# Watch for changes in the haproxy configuration file
+echo "[acme] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
+exec exec s6-setuidgid acme inotifywait -m "$DOMAINS_FILE" -e modify | while read -r file; do
+    echo "[acme] detected changes to ${file}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
+    check_for_missing_domain_certs;
+done

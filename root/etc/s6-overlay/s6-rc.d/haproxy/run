@@ -1,0 +1,41 @@
+#!/usr/bin/with-contenv bash
+
+file1="/config/acme/ca/thumbprint"
+file2="/config/acme/certs/ffdhe2048"
+
+# Loop until both files exist
+while [ ! -f "$file1" ] || [ ! -f "$file2" ]; do
+    echo "[Haproxy] waiting for $file1 and $file2 to be created before starting..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 3
+done
+
+debug_enabled=$(echo "${DEBUG:-false}" | tr 'A-Z' 'a-z')
+
+if [ "$debug_enabled" = "true" ]; then
+    haproxy -vv
+else
+    haproxy -v
+fi
+
+echo "[Haproxy] starting..." | ts '%Y-%m-%d %H:%M:%S'
+
+# Ensure the socket files exist and have the correct permissions
+for sock in /var/lib/haproxy/frontend-offloading.sock /var/lib/haproxy/frontend-offloading-ip-protection.sock /var/lib/haproxy/admin.sock; do
+    if [ ! -f "$sock" ]; then
+        touch "$sock"
+        chown haproxy:haproxy "$sock"
+        chmod 660 "$sock"
+    fi
+done
+
+# Start HAProxy if it's not already running
+if ! pgrep -x "haproxy" > /dev/null; then
+    if [ "$debug_enabled" = "true" ]; then
+        exec haproxy -f -d /config/haproxy.cfg
+    else
+        exec haproxy -f /config/haproxy.cfg
+    fi
+else
+    echo "[Haproxy] is already running." | ts '%Y-%m-%d %H:%M:%S'
+    exit 0
+fi

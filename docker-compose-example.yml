@@ -1,0 +1,18 @@
+services:
+  haproxy:
+    image: brycelarge/haproxy:3.0.5
+    volumes:
+      - ./config:/config
+      - /logs:/var/log/haproxy
+    environment:
+      - CONFIG_AUTO_GENERATE=false
+      - CF_Email=
+      - CF_Key=
+      - CF_Token=
+      - CF_Account_ID=
+      - CF_Zone_ID=
+      # or use 
+      - ACME_EMAIL=
+    ports:
+      - "8008:80"
+      - "8843:443"
