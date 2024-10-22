@@ -71,13 +71,13 @@ export DEPLOY_HAPROXY_STATS_SOCKET=/var/lib/haproxy/admin.sock
 export DEPLOY_HAPROXY_PEM_PATH=/etc/haproxy/certs
 
 # Cloudflare settings
-export CF_Token="${CF_Token}"
-export CF_Account_ID="${CF_Account_ID}"
-export CF_Zone_ID="${CF_Zone_ID}"
+export CF_Token=
+export CF_Account_ID=
+export CF_Zone_ID=
 
 # Alternative Cloudflare settings
-export CF_Key="${CF_Key}"
-export CF_Email="${CF_Email}"
+export CF_Key=
+export CF_Email=
 EOF
 
     # Set permissions on env file

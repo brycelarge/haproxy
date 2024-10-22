@@ -13,10 +13,5 @@ if ! nc -z localhost 80; then
     exit 1
 fi
 
-# Optionally, you can add more specific checks here, such as:
-# - Checking specific backends
-# - Verifying SSL certificates
-# - Checking HAProxy stats socket
-
 echo "HAProxy is healthy"
 exit 0

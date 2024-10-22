@@ -2,6 +2,7 @@
 # shellcheck shell=bash
 
 source /scripts/acme_functions.sh
+source /scripts/debug.sh
 
 # Ensure proper directory structure
 mkdir -p /config/acme \
