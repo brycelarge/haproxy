@@ -20,7 +20,7 @@ install_acme() {
     
     # Use specific version
     ACME_VERSION="3.0.9"
-    ACME_URL="https://github.com/acmesh-official/acme.sh/archive/refs/tags/v${ACME_VERSION}.tar.gz"
+    ACME_URL="https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_VERSION}.tar.gz"
     
     # Create temporary directory
     TEMP_DIR=$(mktemp -d)
