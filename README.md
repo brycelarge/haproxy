@@ -6,7 +6,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 > Credits to the haproxy team and any one whos contributed to it.
 
 > [!WARNING]  
-> If you plan to use this docker then please take note that I have a extreamly busy job and two little kids at home so free time for these projects are rare, so any support needed could take some time. There are other dockers out there so concider the support issue if you plan to use this package.
+> If you plan to use this docker then please take note that I dont find much time these days for pet projects, so any support needed could take some time. There are other dockers out there so concider the support issue if you plan to use this package.
 > I am also open to any pull request to contribute to the project when time is available to test and review.
 
 ## Table of Contents
