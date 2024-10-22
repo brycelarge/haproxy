@@ -80,7 +80,7 @@ services:
       - CF_Zone_ID=${CF_Zone_ID}
       - ACME_EMAIL=${ACME_EMAIL}
       - ACME_CHALLENGE_TYPE=dns_cf
-      - CONFIG_AUTO_GENERATE_DEBUG=false
+      - HA_DEBUG=false
     restart: unless-stopped
 ```
 
@@ -90,7 +90,7 @@ services:
 |----------|----------|---------|-------------|
 | ACME_EMAIL | Yes | - | Email for Let's Encrypt registration |
 | ACME_CHALLENGE_TYPE | No | dns_cf | Challenge type (dns_cf/http) |
-| DEBUG | No | false | Enable debug logging |
+| HA_DEBUG | No | false | Enable debug logging |
 | TZ | No | UTC | Container timezone |
 
 ### Cloudflare API Authentication Methods
@@ -216,5 +216,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 Enable debug logging:
 ```bash
--e DEBUG=true
+-e HA_DEBUG=true
 ```

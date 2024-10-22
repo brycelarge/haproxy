@@ -1,8 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
-cat /etc/s6-overlay/s6-rc.d/adduser/branding
-
 echo '
 ───────────────────────────────────────
 GID/UID

@@ -1,5 +1,13 @@
 #!/usr/bin/with-contenv bash
 
+if [ -f /etc/profile ]; then
+    source /etc/profile
+fi
+
+set -eo pipefail
+shopt -s nullglob
+shopt -s lastpipe
+
 # Variables
 USER="acme"
 HOME_DIR="/config/acme"
@@ -13,56 +21,43 @@ ACME_CHALLENGE_TYPE="${ACME_CHALLENGE_TYPE:-dns_cf}"
 source /scripts/debug.sh;
 source /scripts/acme_lock.sh;
 
-#!/usr/bin/with-contenv bash
-
 install_acme() {
+    # Check if email is empty
+    if [ -z "$ACME_EMAIL" ]; then
+        echo "[acme] Error: ACME_EMAIL env is not set" | ts '%Y-%m-%d %H:%M:%S'
+        exit 0
+    fi
+
     echo "[acme] Installing acme.sh...." | ts '%Y-%m-%d %H:%M:%S'
-    
-    # Use specific version
-    ACME_VERSION="3.0.9"
-    ACME_URL="https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_VERSION}.tar.gz"
-    
-    # Create temporary directory
-    TEMP_DIR=$(mktemp -d)
-    
-    # Download and verify
-    if ! curl -s -L -o "${TEMP_DIR}/acme.tar.gz" "${ACME_URL}"; then
-        echo "[acme] Failed to download acme.sh" | ts '%Y-%m-%d %H:%M:%S'
-        rm -rf "${TEMP_DIR}"
-        return 1
-    fi
-    
-    # Extract to temporary location
-    cd "${TEMP_DIR}" || exit 1
-    if ! tar xf acme.tar.gz --strip-components=1; then
-        echo "[acme] Failed to extract acme.sh" | ts '%Y-%m-%d %H:%M:%S'
-        rm -rf "${TEMP_DIR}"
-        return 1
-    fi
-    
-    # Prepare installation
-    mkdir -p "${HOME_DIR}" \
-        "${CERT_HOME}"
-    
-    # Install acme.sh
-    ./acme.sh --install \
+
+    curl -o /config/acme.sh https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh;
+    chmod 755 /config/acme.sh;
+    mkdir -p /config/acme;
+    cd /config/; # make sure we are in a writable directory
+
+    # install as root then convert to itetech user
+    bash acme.sh \
+        --install \
         --nocron \
         --home "${HOME_DIR}" \
         --config-home "${HOME_DIR}" \
         --cert-home "${CERT_HOME}" \
-        --accountemail "${CF_Email:-$ACME_EMAIL}" \
-        --no-profile \
-        --no-color || {
-            echo "[acme] Installation failed" | ts '%Y-%m-%d %H:%M:%S'
-            rm -rf "${TEMP_DIR}"
-            return 1
-        }
-    
-    # Clean up temporary files
-    rm -rf "${TEMP_DIR}"
+        --accountemail "${ACME_EMAIL}";
 
-    # Set ownership
-    chown -R "${USER}:${USER}" "${HOME_DIR}"
+    debug_log "${HOME_DIR} ${CERT_HOME} ${ACME_EMAIL}"
+
+    # Check if installation was successful
+    if [ ! -f "${HOME_DIR}/acme.sh" ] || [ ! -f "${HOME_DIR}/acme.sh.env" ]; then
+        echo "[acme] Installation failed" | ts '%Y-%m-%d %H:%M:%S'
+        exit 0
+    fi
+
+    chown -R ${USER}:${USER} /config/acme;
+    # rm -rf "${TEMP_DIR}"
+    echo "[acme] Installed successfully" | ts '%Y-%m-%d %H:%M:%S'
+
+    # Create environment file
+    echo "[acme] Setting up acme environment variables..." | ts '%Y-%m-%d %H:%M:%S'
     
     # Create environment file
     s6-setuidgid "${USER}" cat <<EOF > "${HOME_DIR}/acme.sh.env"
@@ -116,7 +111,7 @@ issue_cert() {
             --pre-hook "echo 'Using HAProxy for ACME challenge'" \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
-            --cert-home  $CERT_HOME \
+            --cert-home $CERT_HOME \
             -d "${1}";
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
@@ -125,7 +120,7 @@ issue_cert() {
             --dns dns_cf \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
-            --cert-home  $CERT_HOME \
+            --cert-home $CERT_HOME \
             -d "${1}";
     fi
 
@@ -272,9 +267,7 @@ EOF
     echo "[acme] Renewal schedule: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
 
     # Show the current cron configuration
-    debug_enabled=$(echo "${DEBUG:-false}" | tr 'A-Z' 'a-z')
-
-    if [ "$debug_enabled" = "true" ]; then
+    if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         debug_log "Current cron configuration:"
         cat "$CRON_FILE"
     fi

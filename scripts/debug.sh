@@ -1,17 +1,19 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
-# Function to output debug messages if debugging is enabled
+# Define debug state based on environment variable
+case "${HA_DEBUG}" in
+    1|yes|true|TRUE|Yes|YES)
+        HA_DEBUG_ENABLED=1
+        ;;
+    *)
+        HA_DEBUG_ENABLED=0
+        ;;
+esac
+
+# Debug logging function using the state variable
 debug_log() {
-    # Get debug setting
-    debug_enabled=$(echo "${DEBUG:-false}" | tr 'A-Z' 'a-z')
-
-    # Check if debug is enabled (true)
-    if [ "$debug_enabled" = "true" ]; then
-        echo "[Debug] $1" | ts '%Y-%m-%d %H:%M:%S'
+    if [ "${HA_DEBUG_ENABLED}" = "1" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [Debug] $1"
     fi
 }
-
-# If script is run directly, process the argument
-if [ "$0" = "/scripts/debug.sh" ]; then
-    debug_log "$1"
-fi

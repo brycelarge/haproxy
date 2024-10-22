@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
 source /scripts/acme_functions.sh # issue_cert and deploy_cert functions
 source /scripts/debug.sh

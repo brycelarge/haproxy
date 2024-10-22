@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
 YAML_FILE=/config/haproxy.yaml
 HAPROXY_CFG="/config/haproxy.cfg"
@@ -51,7 +52,7 @@ global
     ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
     ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
 
-    ssl-dh-param-file /config/acme/certs/ffdhe2048
+    ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
     tune.ssl.default-dh-param 2048
 
 EOF

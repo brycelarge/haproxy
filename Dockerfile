@@ -1,4 +1,4 @@
-FROM alpine:latest AS openssl-builder
+FROM alpine:3.20 AS openssl-builder
 
 ENV OPENSSL_URL=https://github.com/quictls/openssl/archive/refs/tags/openssl-3.1.7-quic1.tar.gz
 
@@ -18,7 +18,7 @@ RUN \
     rm -rf /opt/quictls/ssl/certs && \
     ln -s /etc/ssl/certs /opt/quictls/ssl/certs
 
-FROM alpine:latest AS haproxy-builder
+FROM alpine:3.20 AS haproxy-builder
 COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
@@ -102,7 +102,6 @@ RUN \
         readline \
         libcrypto3 \
         libssl3 \
-        moreutils \
         rsyslog \
         inotify-tools \
         socat \
@@ -146,7 +145,8 @@ RUN \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV CONFIG_AUTO_GENERATE=false \
-    DEBUG=false
+    ACME_EMAIL=\
+    HA_DEBUG=false
 
 COPY root/ /
 COPY scripts/ /scripts/

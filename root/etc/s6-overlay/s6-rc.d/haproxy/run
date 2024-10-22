@@ -1,7 +1,10 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
 file1="/config/acme/ca/thumbprint"
-file2="/config/acme/certs/ffdhe2048"
+file2="/config/acme/tls1-params/ffdhe2048"
+
+source /scripts/debug.sh;
 
 # Loop until both files exist
 while [ ! -f "$file1" ] || [ ! -f "$file2" ]; do
@@ -9,9 +12,7 @@ while [ ! -f "$file1" ] || [ ! -f "$file2" ]; do
     sleep 3
 done
 
-debug_enabled=$(echo "${DEBUG:-false}" | tr 'A-Z' 'a-z')
-
-if [ "$debug_enabled" = "true" ]; then
+if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
     haproxy -vv
 else
     haproxy -v
@@ -30,7 +31,7 @@ done
 
 # Start HAProxy if it's not already running
 if ! pgrep -x "haproxy" > /dev/null; then
-    if [ "$debug_enabled" = "true" ]; then
+    if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         exec haproxy -f -d /config/haproxy.cfg
     else
         exec haproxy -f /config/haproxy.cfg

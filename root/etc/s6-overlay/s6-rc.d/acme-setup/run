@@ -2,64 +2,32 @@
 # shellcheck shell=bash
 
 source /scripts/acme_functions.sh
-source /scripts/debug.sh
 
-# Ensure proper directory structure
-mkdir -p /config/acme \
-    /config/acme/certs \
-    /config/acme/ca \
-    /var/log/haproxy
-
-# Set proper permissions
-chown -R acme:acme /config/acme
-chmod 750 /config/acme
-chmod 750 /config/acme/certs
-chmod 750 /config/acme/ca
-
-# Ensure log directory has proper permissions
-chown -R acme:acme /var/log/haproxy
-chmod 750 /var/log/haproxy
+mkdir -p /config/acme/tls1-params
 
 if [ ! -e /config/acme/certs/ffdhe2048 ]; then
     echo "[acme] Getting recommended Diffie-Hellman params for TLS1.3" | ts '%Y-%m-%d %H:%M:%S'
-    curl -s "https://ssl-config.mozilla.org/ffdhe2048.txt" > /config/acme/certs/ffdhe2048
-    chown acme:acme /config/acme/certs/ffdhe2048
-    chmod 644 /config/acme/certs/ffdhe2048
+    curl -s "https://ssl-config.mozilla.org/ffdhe2048.txt" > /config/acme/tls1-params/ffdhe2048
+    chown acme:acme /config/acme/tls1-params/ffdhe2048
+    chmod 644 /config/acme/tls1-params/ffdhe2048
 fi
 
 # Check if default.pem exists
 if [ ! -e /config/acme/certs/default.pem ]; then
-    echo "[haproxy] Creating default SSL certificate..." | ts '%Y-%m-%d %H:%M:%S'
-    
-    KEY=/tmp/haproxy_key.pem
-    
-    # Generate certificate
-    openssl req -x509 -newkey rsa:2048 -nodes \
-        -keyout "$KEY" \
-        -out /tmp/haproxy_cert.pem \
-        -days 3650 \
-        -subj "/C=XX/ST=State/L=City/O=Organization/OU=Unit/CN=haproxy.selfsigned.invalid"
-    
-    # Combine cert and key
-    cat /tmp/haproxy_cert.pem "$KEY" > /config/acme/certs/default.pem
-    
-    # Set permissions
-    chown acme:acme /config/acme/certs/default.pem
-    chmod 600 /config/acme/certs/default.pem
-    
-    # Cleanup
-    rm -f /tmp/haproxy_cert.pem "$KEY"
-    
-    echo "[haproxy] Default SSL certificate created successfully" | ts '%Y-%m-%d %H:%M:%S'
+    echo "[haproxy] creating default ssl certificate..." | ts '%Y-%m-%d %H:%M:%S'
+
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 \
+        -subj "/C=US/ST=somewhere/L=someplace/O=haproxy/OU=haproxy/CN=haproxy.selfsigned.invalid" && \
+        cat cert.pem key.pem > /config/acme/certs/default.pem
+
+    chown acme:acme /config/acme/certs/default.pem;
+
+    echo "[haproxy] default ssl certificate sucessfuly created" | ts '%Y-%m-%d %H:%M:%S'
 fi
 
 # Initialize or update ACME
 if [ ! -e /config/acme/acme.sh.env ]; then
     install_acme;
-    if [ $? -ne 0 ]; then
-        echo "[acme] Installation failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
-        exit 1
-    fi
 fi
 
 # Register or verify ACME

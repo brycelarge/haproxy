@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
 chmod +x /scripts/generate_haproxy_config.sh;
 
