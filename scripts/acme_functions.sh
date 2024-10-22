@@ -52,6 +52,8 @@ install_acme() {
         exit 0
     fi
 
+    rm -f /config.acme.sh
+    
     chown -R ${USER}:${USER} /config/acme;
     # rm -rf "${TEMP_DIR}"
     echo "[acme] Installed successfully" | ts '%Y-%m-%d %H:%M:%S'
