@@ -18,23 +18,23 @@ else
     haproxy -v
 fi
 
-echo "[Haproxy] starting..." | ts '%Y-%m-%d %H:%M:%S'
-
 # Ensure the socket files exist and have the correct permissions
-for sock in /var/lib/haproxy/frontend-offloading.sock /var/lib/haproxy/frontend-offloading-ip-protection.sock /var/lib/haproxy/admin.sock; do
-    if [ ! -f "$sock" ]; then
-        touch "$sock"
-        chown haproxy:haproxy "$sock"
-        chmod 660 "$sock"
+for sock in frontend-offloading.sock frontend-offloading-ip-protection.sock; do
+    if [ ! -f "/var/lib/haproxy/$sock" ]; then
+        touch "/var/lib/haproxy/$sock"
+        chmod 660 "/var/lib/haproxy/$sock"
+        chown haproxy:haproxy "/var/lib/haproxy/$sock"
     fi
 done
+
+echo "[Haproxy] starting..." | ts '%Y-%m-%d %H:%M:%S'
 
 # Start HAProxy if it's not already running
 if ! pgrep -x "haproxy" > /dev/null; then
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
-        exec haproxy -f -d /config/haproxy.cfg
+        s6-setuidgid haproxy haproxy -f -d /config/haproxy.cfg
     else
-        exec haproxy -f /config/haproxy.cfg
+        s6-setuidgid haproxy haproxy -f /config/haproxy.cfg
     fi
 else
     echo "[Haproxy] is already running." | ts '%Y-%m-%d %H:%M:%S'

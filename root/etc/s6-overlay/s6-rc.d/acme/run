@@ -34,43 +34,57 @@ mapfile -t domains < <(extract_domains)
 # Print the number of domains found
 echo "[acme] Found ${#domains[@]} domains in your haproxy.yaml file, going through them to see if we need to issue or renew..." | ts '%Y-%m-%d %H:%M:%S'
 
+#!/bin/bash
+
 function check_for_missing_domain_certs() {
+    FAILED_DOMAINS=()
+    
     # Loop through the domains and process them
     for domain in "${domains[@]}"; do
         debug_log "Processing domain: $domain" | ts '%Y-%m-%d %H:%M:%S'
-
-        # Check if certificate is deployed in haproxy
-        if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
-            debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
-
-            # Check expiration
-            expiration=$(openssl x509 -enddate -noout -in "${HAPROXY_CERTS_DIR}/${domain}.pem" | cut -d= -f2)
-            debug_log "$domain Certificate expires on: $expiration" | ts '%Y-%m-%d %H:%M:%S'
-
-            # Add logic to renew if close to expiration
-            # For example:
-            if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
-                echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
-                renew_cert "$domain";
-            fi
-        else
-            # Check if certificate exists in ACME directory
-            if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
-                echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
-                deploy_cert "$domain";
+        
+        {
+            if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
+                debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
+                
+                # Check expiration
+                expiration=$(openssl x509 -enddate -noout -in "${HAPROXY_CERTS_DIR}/${domain}.pem" | cut -d= -f2)
+                debug_log "$domain Certificate expires on: $expiration" | ts '%Y-%m-%d %H:%M:%S'
+                
+                # Add logic to renew if close to expiration
+                if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
+                    echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
+                    renew_cert "$domain"
+                fi
             else
-                echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
-                issue_cert "$domain";
+                # Check if certificate exists in ACME directory
+                if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
+                    echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
+                    deploy_cert "$domain"
+                else
+                    echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                    issue_cert "$domain"
+                fi
             fi
-        fi
+        } || {
+            echo "[acme] Failed to process ${domain}, moving to next domain..." | ts '%Y-%m-%d %H:%M:%S'
+            FAILED_DOMAINS+=("$domain")
+            continue
+        }
     done
+    
+    # Report any failed domains
+    if [ ${#FAILED_DOMAINS[@]} -gt 0 ]; then
+        echo "[acme] The following domains failed processing:" | ts '%Y-%m-%d %H:%M:%S'
+        printf '%s\n' "${FAILED_DOMAINS[@]}" | ts '%Y-%m-%d %H:%M:%S'
+    fi
 }
 
 check_for_missing_domain_certs
 
 # Watch for changes in the haproxy configuration file
 echo "[acme] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
-exec exec s6-setuidgid acme inotifywait -m "$DOMAINS_FILE" -e modify | while read -r file; do
+exec s6-setuidgid acme inotifywait -m "$HAPROXY_YAML" -e modify | while read -r file; do
     echo "[acme] detected changes to ${file}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
-    check_for_missing_domain_certs;
+    # check_for_missing_domain_certs;
 done

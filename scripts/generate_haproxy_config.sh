@@ -29,8 +29,6 @@ echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 cat <<EOF >> "$HAPROXY_CFG"
 global
     maxconn 4096
-    user haproxy
-    group haproxy
     daemon
     hard-stop-after 15m
     setenv ACCOUNT_THUMBPRINT '${THUMBPRINT}'
@@ -107,6 +105,7 @@ EOF
 # Generate HAProxy frontend https configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https
+    bind        :443
 	mode        tcp
 	log			global
 	tcp-request inspect-delay	5s
@@ -117,42 +116,52 @@ frontend https
 
     # Placed by yaml https_frontend_rules
     # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
+
 EOF
 
 # Generate HAProxy frontend https-offloading-ip-protection configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
-	bind			127.0.0.1:8443 name 127.0.0.1:8443 ssl crt /config/acme/certs/default.pem crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+	bind			127.0.0.1:8443 name 127.0.0.1:8443 ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+	bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+
 	mode			http
 	log			    global
 	timeout client	300000
+    option			http-keep-alive
+	option			forwardfor
+	acl             https ssl_fc
 	http-request    set-var(txn.txnhost) hdr(host)
-    http-request    add-header X-Forwarded-Proto https
-    http-response   set-header X-Frame-Options sameorigin
-
-    # Placed by yaml frontend https-offloading-ip-protection:
-    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
+    http-after-response add-header alt-svc 'h3=":443"; ma=60'
+    http-request add-header X-Forwarded-Proto https
+    http-response set-header X-Frame-Options sameorigin
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
+    # Placed by yaml frontend https-offloading-ip-protection:
+    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
+
 EOF
 
 # Generate HAProxy frontend https-offloading configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
-	bind			127.0.0.1:8444 name 127.0.0.1:8444 ssl crt /config/acme/certs/default.pem crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+	bind			127.0.0.1:8444 name 127.0.0.1:8444 ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+	bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+
 	mode			http
 	log			    global
 	timeout client	300000
+	http-request    set-var(txn.txnhost) hdr(host)
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
     http-request add-header X-Forwarded-Proto https
     http-response set-header X-Frame-Options sameorigin
 
+    # Placed by yaml domain_mappings
+    # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
     # Placed by yaml frontend https-offloading:
     # [HTTPS-FRONTEND-OFFLOADING PLACEHOLDER]
 
-    # Placed by yaml domain_mappings
-    # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
 EOF
 
 # Convert YAML to JSON
@@ -192,21 +201,21 @@ generate_https_frontend_config() {
     
     debug_log "Generating ACLs and use_backend rules for HTTPS frontend"
     
-    # Generate ACLs for frontend-offloading and frontend-offloading-ip-protection
-    config="${config}    acl frontend-offloading ssl_fc_sni_end"
-    config="${config} $(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading") | .domains[]' | tr '\n' ' ')"
-    config="${config}
+    # Generate individual ACLs for frontend-offloading
+    while read -r domain; do
+        config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
 "
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading") | .domains[]')
     
-    config="${config}    acl frontend-offloading-ip-protection ssl_fc_sni -i"
-    config="${config} $(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]' | tr '\n' ' ')"
-    config="${config}
+    # Generate individual ACLs for frontend-offloading-ip-protection
+    while read -r domain; do
+        config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]')
     
-    # Generate use_backend rules based on the ACLs defined above
-    config="${config}    use_backend frontend-offloading if frontend-offloading
-"
-    config="${config}    use_backend frontend-offloading-ip-protection if frontend-offloading-ip-protection
+    # Add use_backend rules
+    config="${config}    use_backend frontend-offloading if https-offloading
+    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
 "
     
     if [ -n "$config" ]; then
@@ -215,30 +224,66 @@ generate_https_frontend_config() {
 $config
 EOF
         sed -i '/# \[HTTPS-FRONTEND USE_BACKEND PLACEHOLDER\]/d' "$HAPROXY_CFG"
-    else
-        debug_log "Warning: No HTTPS frontend rules generated." | ts '%Y-%m-%d %H:%M:%S'
     fi
-    
-    debug_log "Final generated config for HTTPS frontend:"
-    debug_log "$config"
+}
+
+# Helper function to generate regex pattern for domain
+get_domain_regex() {
+    ESCAPED_DOMAIN=$(echo "$1" | sed 's/\./\\./g')
+
+    if [ "$2" = "true" ]; then
+        # For base domain only wild card certificates
+        echo "^${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
+    else
+        # For subdomains
+        echo "^([^\.]*)\.${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
+    fi
+}
+
+# Helper function to extract domain from match condition
+get_match_domain() {
+    local match_condition="$1"
+    echo "$match_condition" | sed 's/.*-i \([^ ]*\)$/\1/'
 }
 
 # Function to generate HTTPS offloading frontend configuration
 generate_https_offloading_frontend_config() {
     local acl_config=""
     local backend_config=""
+    local seen_certs=""
     
     debug_log "Generating configuration for https-offloading"
-    while read -r domain backend offloading_match_condition; do
+    
+    # First pass: Generate all unique certificate ACLs
+    while read -r domain backend; do
         if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
-            debug_log "Processing domain: $domain"
-            acl_config="${acl_config}    acl ${domain/./-} ${offloading_match_condition}
+            # Get base domain
+            base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
+            cert_acl_name="aclcrt_${base_domain}_https_offloading"
+            
+            # Only add cert ACL if we haven't seen it before
+            if ! echo "$seen_certs" | grep -F "$cert_acl_name" > /dev/null; then
+                seen_certs="${seen_certs}${cert_acl_name}
 "
-            backend_config="${backend_config}    use_backend ${backend} if ${domain/./-}
+                # Add certificate matching ACLs for both subdomain and base domain
+                acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "false")
+"
+                acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "true")
+"
+            fi
+            
+            # Create domain-specific ACL using the original domain
+            domain_clean=${domain//[.-]/_}
+            acl_config="${acl_config}    acl acl_${domain_clean} var(txn.txnhost) -m str -i ${domain}
+"
+            
+            # Store backend rule using both ACLs
+            backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading") | "\(.domain) \(.backend) \(.offloading_match_condition)"')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
     
+    # Combine configs with proper line breaks
     local config="${acl_config}
 ${backend_config}"
     
@@ -248,30 +293,61 @@ ${backend_config}"
 $config
 EOF
         sed -i '/# \[HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER\]/d' "$HAPROXY_CFG"
-    else
-        debug_log "[Haproxy] Warning: No HTTPS offloading frontend rules generated." | ts '%Y-%m-%d %H:%M:%S'
     fi
-    
-    debug_log "Final generated config for https-offloading frontend:"
-    debug_log "$config"
 }
 
 # Function to generate HTTPS offloading IP protection frontend configuration
 generate_https_offloading_ip_protection_frontend_config() {
     local acl_config=""
     local backend_config=""
+    local seen_certs=""
+    local base_domain=""
     
     debug_log "Generating configuration for https-offloading-ip-protection frontend"
-    while read -r domain backend offloading_match_condition; do
+    
+    # First determine the base domain from the first domain
+    while read -r domain backend; do
         if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
-            debug_log "Processing domain: $domain"
-            acl_config="${acl_config}    acl ${domain/./-} ${offloading_match_condition}
+            base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
+            break
+        fi
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
+    
+    if [ -z "$base_domain" ]; then
+        debug_log "Error: Could not determine base domain for IP protection frontend"
+        return 1
+    fi
+    
+    debug_log "Using base domain: $base_domain for IP protection frontend"
+    
+    # Generate ACLs using the determined base domain
+    while read -r domain backend; do
+        if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
+            base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
+            cert_acl_name="aclcrt_${base_domain}_https_offloading_ip_protection"
+
+            # Only add cert ACL if we haven't seen it before
+            if ! echo "$seen_certs" | grep -F "$cert_acl_name" > /dev/null; then
+                seen_certs="${seen_certs}${cert_acl_name}
 "
-            backend_config="${backend_config}    use_backend ${backend} if ${domain/./-}
+                # Add certificate matching ACLs for both subdomain and base domain
+                acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "false")
+"
+                acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "true")
+"
+            fi
+            
+            # Create domain ACL using the original domain
+            acl_config="${acl_config}    acl ${domain} var(txn.txnhost) -m str -i ${domain}
+"
+            
+            # Store backend rule using both ACLs
+            backend_config="${backend_config}    use_backend ${backend} if ${domain} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | "\(.domain) \(.backend) \(.offloading_match_condition)"')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
     
+    # Combine configs with proper line breaks
     local config="${acl_config}
 ${backend_config}"
     
@@ -281,12 +357,7 @@ ${backend_config}"
 $config
 EOF
         sed -i '/# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER\]/d' "$HAPROXY_CFG"
-    else
-        debug_log "Warning: No HTTPS offloading IP protection frontend rules generated." | ts '%Y-%m-%d %H:%M:%S'
     fi
-    
-    debug_log "Final generated config for https-offloading-ip-protection frontend:"
-    debug_log "$config"
 }
 
 # Function to generate backend configurations
@@ -370,10 +441,11 @@ backend $name
     mode $mode
     id $backend_id
     log global
-    timeout connect ${timeout_connect}
-    timeout server ${timeout_server}
     ${retries}
     ${server_line} ${health_check}
+	timeout connect 30000
+	timeout server 90000
+
 EOF
 
         backend_id=$((backend_id + 1))

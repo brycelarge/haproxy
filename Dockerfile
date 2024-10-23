@@ -124,12 +124,13 @@ RUN \
     mkdir -p \
         /var/lib/haproxy \
         /var/run/haproxy \
+        /etc/haproxy/errors \
         /var/lib/haproxy/dev/ && \
-    chmod 770 /etc/haproxy/certs && \
     chmod 770 /usr/local/bin/healthcheck.sh && \
     chown haproxy:haproxy /var/lib/haproxy && \
     chown haproxy:haproxy /var/run/haproxy && \
     chown haproxy:haproxy /etc/haproxy && \
+    setcap 'cap_net_bind_service=+ep' /usr/local/sbin/haproxy && \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \
     adduser \
@@ -158,6 +159,7 @@ WORKDIR /var/lib/haproxy
 EXPOSE 80/tcp 443/tcp 443/udp
 VOLUME /config
 VOLUME /var/log/haproxy
+VOLUME /etc/haproxy/certs
 
 # https://www.haproxy.org/download/1.8/doc/management.txt
 # "4. Stopping and restarting HAProxy"

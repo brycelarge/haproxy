@@ -18,6 +18,9 @@ LOG_FILE="/var/log/acme-renewals.log"
 # New variable to determine the challenge type
 ACME_CHALLENGE_TYPE="${ACME_CHALLENGE_TYPE:-dns_cf}"
 
+chown haproxy:haproxy /etc/haproxy/certs
+chmod 770 /etc/haproxy/certs
+
 source /scripts/debug.sh;
 source /scripts/acme_lock.sh;
 
@@ -30,20 +33,29 @@ install_acme() {
 
     echo "[acme] Installing acme.sh...." | ts '%Y-%m-%d %H:%M:%S'
 
-    curl -o /config/acme.sh https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh;
-    chmod 755 /config/acme.sh;
-    mkdir -p /config/acme;
-    cd /config/; # make sure we are in a writable directory
+    # Download the master branch archive
+    cd /config/;
+    curl -L -o acme.sh.zip https://github.com/acmesh-official/acme.sh/archive/master.zip
+
+    # Extract the archive
+    unzip -q acme.sh.zip
+
+    # Move to the extracted directory
+    cd acme.sh-master
+    # Set permissions
+    chmod 755 acme.sh
 
     # install as root then convert to itetech user
     bash acme.sh \
         --install \
         --nocron \
-        --stateless \
         --home "${HOME_DIR}" \
         --config-home "${HOME_DIR}" \
         --cert-home "${CERT_HOME}" \
         --accountemail "${ACME_EMAIL}";
+    
+    cd /config;
+    rm -rf acme.sh-master;
 
     debug_log "${HOME_DIR} ${CERT_HOME} ${ACME_EMAIL}"
 
@@ -53,10 +65,7 @@ install_acme() {
         exit 0
     fi
 
-    rm -f /config.acme.sh
-
     chown -R ${USER}:${USER} /config/acme;
-    # rm -rf "${TEMP_DIR}"
     echo "[acme] Installed successfully" | ts '%Y-%m-%d %H:%M:%S'
 
     # Create environment file
@@ -86,13 +95,24 @@ EOF
 }
 
 register_acme() {
-    source /config/acme/acme.sh.env;
     echo "[acme] registering an account with letsencrypt..." | ts '%Y-%m-%d %H:%M:%S'
-    ACCOUNT_THUMBPRINT=$(exec s6-setuidgid ${USER} $HOME_DIR/acme.sh --home $HOME_DIR --config-home $HOME_DIR --cert-home $CERT_HOME --stateless --register-account --server letsencrypt -m "${ACME_EMAIL}" | grep 'ACCOUNT_THUMBPRINT' | cut -d "'" -f 2)
 
-    echo "[acme] account THUMBPRINT: ${ACCOUNT_THUMBPRINT}" | ts '%Y-%m-%d %H:%M:%S';
-
-    echo "${ACCOUNT_THUMBPRINT}" >> /config/acme/ca/thumbprint;
+    # Register account with letsencrypt
+    source "$HOME_DIR/acme.sh.env";
+    s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        --register-account \
+        --accountemail "${ACME_EMAIL}" \
+        --server letsencrypt \
+        --stateless \
+        --home "${HOME_DIR}" \
+        --config-home "${HOME_DIR}" \
+        --cert-home "${CERT_HOME}" \
+        --debug > /tmp/acme_reg.log 2>&1
+        
+    # Extract and save thumbprint
+    THUMBPRINT=$(grep "ACCOUNT_THUMBPRINT" /tmp/acme_reg.log | cut -d"'" -f2)
+    echo "[acme] account THUMBPRINT: ${THUMBPRINT}" | ts '%Y-%m-%d %H:%M:%S';
+    echo "${THUMBPRINT}" >> /config/acme/ca/thumbprint;
 
     setup_acme_renewal
 }
@@ -101,6 +121,7 @@ issue_cert() {
     if ! acquire_lock; then
         return 1
     fi
+
     trap cleanup EXIT
 
     echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
@@ -109,54 +130,71 @@ issue_cert() {
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
-        s6-setuidgid ${USER} /config/acme/acme.sh \
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --stateless \
+            --server letsencrypt \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \
             -d "${1}";
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
-        s6-setuidgid ${USER} /config/acme/acme.sh \
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --dns dns_cf \
+            --server letsencrypt \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \
             -d "${1}";
     fi
 
+    release_lock;
     deploy_cert "${1}";
 }
 
 deploy_cert() {
     echo "[acme] Deploying ssl certificate for: ${1}" | ts '%Y-%m-%d %H:%M:%S';
 
-    source /config/acme/acme.sh.env;
-    s6-setuidgid ${USER} /config/acme/acme.sh \
-        --home $HOME_DIR \
-        --config-home $HOME_DIR \
-        --cert-home $CERT_HOME \
-        --deploy -d "${1}" \
-        --deploy-hook haproxy;
+    {
+        # Change to acme.sh directory first
+        cd $HOME_DIR;
 
-    echo "[acme] Certificate successfully deployed for:${1}" | ts '%Y-%m-%d %H:%M:%S';
+        source "$HOME_DIR/acme.sh.env";
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+            --home $HOME_DIR \
+            --config-home $HOME_DIR \
+            --cert-home $CERT_HOME \
+            --deploy -d "${1}" \
+            --deploy-hook haproxy;
+
+        echo "[acme] Certificate successfully deployed for:${1}" | ts '%Y-%m-%d %H:%M:%S';
+    } || {
+        echo "[acme] Certificate failed to deploy for:${1}, check your DNS!" | ts '%Y-%m-%d %H:%M:%S';
+        # remove the empty file
+        if [ -f "/etc/haproxy/certs/${1}.pem" ]; then
+            rm -f "/etc/haproxy/certs/${1}.pem"
+        fi
+    }
 }
 
 renew_cert() {
     if ! acquire_lock; then
         return 1
     fi
+
     trap cleanup EXIT
 
-    source /config/acme/acme.sh.env;
+    source "$HOME_DIR/acme.sh.env";
     s6-setuidgid ${USER} /config/acme/acme.sh \
         --home $HOME_DIR \
         --config-home $HOME_DIR \
         --cert-home $CERT_HOME \
+        --server letsencrypt \
         --renew -d "${1}"
 
+    release_lock;
     deploy_cert "${1}";
 }
 
@@ -210,12 +248,7 @@ trap cleanup EXIT
 renew_certificate() {
     local domain="$1"
     log_message "Starting renewal for ${domain}"
-
-        s6-setuidgid ${USER} /config/acme/acme.sh \
-        --home $HOME_DIR \
-        --config-home $HOME_DIR \
-        --cert-home $CERT_HOME \
-        --renew -d "${1}"
+    source /config/acme/acme.sh.env;
 
     /config/acme/acme.sh \
         --home /config/acme \

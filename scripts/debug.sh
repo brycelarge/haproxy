@@ -14,6 +14,6 @@ esac
 # Debug logging function using the state variable
 debug_log() {
     if [ "${HA_DEBUG_ENABLED}" = "1" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [Debug] $1"
+        echo "[Debug] $1"
     fi
 }

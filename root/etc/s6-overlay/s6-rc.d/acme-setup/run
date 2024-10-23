@@ -6,7 +6,7 @@ source /scripts/acme_functions.sh
 mkdir -p /config/acme/tls1-params \
     /config/acme/certs
 
-if [ ! -e /config/acme/certs/ffdhe2048 ]; then
+if [ ! -e /config/acme/tls1-params/ffdhe2048 ]; then
     echo "[acme] Getting recommended Diffie-Hellman params for TLS1.3" | ts '%Y-%m-%d %H:%M:%S'
     curl -s "https://ssl-config.mozilla.org/ffdhe2048.txt" > /config/acme/tls1-params/ffdhe2048
     chown acme:acme /config/acme/tls1-params/ffdhe2048
