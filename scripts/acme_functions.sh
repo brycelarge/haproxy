@@ -39,6 +39,7 @@ install_acme() {
     bash acme.sh \
         --install \
         --nocron \
+        --stateless \
         --home "${HOME_DIR}" \
         --config-home "${HOME_DIR}" \
         --cert-home "${CERT_HOME}" \
@@ -53,7 +54,7 @@ install_acme() {
     fi
 
     rm -f /config.acme.sh
-    
+
     chown -R ${USER}:${USER} /config/acme;
     # rm -rf "${TEMP_DIR}"
     echo "[acme] Installed successfully" | ts '%Y-%m-%d %H:%M:%S'
@@ -87,9 +88,10 @@ EOF
 register_acme() {
     source /config/acme/acme.sh.env;
     echo "[acme] registering an account with letsencrypt..." | ts '%Y-%m-%d %H:%M:%S'
-    REGISTER_RESPONSE=$(exec s6-setuidgid ${USER} $HOME_DIR/acme.sh --home $HOME_DIR --config-home $HOME_DIR --cert-home $CERT_HOME --register-account --server letsencrypt_test -m "${CF_Email}");
-    ACCOUNT_THUMBPRINT=$(echo "${REGISTER_RESPONSE}" | grep ACCOUNT_THUMBPRINT | sed "s/.*='\(.*\)'/\1/");
+    ACCOUNT_THUMBPRINT=$(exec s6-setuidgid ${USER} $HOME_DIR/acme.sh --home $HOME_DIR --config-home $HOME_DIR --cert-home $CERT_HOME --stateless --register-account --server letsencrypt -m "${ACME_EMAIL}" | grep 'ACCOUNT_THUMBPRINT' | cut -d "'" -f 2)
+
     echo "[acme] account THUMBPRINT: ${ACCOUNT_THUMBPRINT}" | ts '%Y-%m-%d %H:%M:%S';
+
     echo "${ACCOUNT_THUMBPRINT}" >> /config/acme/ca/thumbprint;
 
     setup_acme_renewal
@@ -109,8 +111,7 @@ issue_cert() {
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} /config/acme/acme.sh \
             --issue \
-            --standalone \
-            --pre-hook "echo 'Using HAProxy for ACME challenge'" \
+            --stateless \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \

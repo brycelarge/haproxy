@@ -17,6 +17,10 @@ done
 
 THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
 
+# Remove existing config file if it exists and create a new one
+[ -e "$HAPROXY_CFG" ] && rm "$HAPROXY_CFG"
+touch "$HAPROXY_CFG"
+
 source /scripts/debug.sh
 
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
@@ -85,17 +89,19 @@ defaults
 
 EOF
 
-# Generate HAProxy frontend http configuration
-cat <<EOF >> "$HAPROXY_CFG"
+cat <<'EOF' >> "$HAPROXY_CFG"
 frontend http
+    bind *:80
+
+    # ACME challenge
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
+
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
     acl https ssl_fc
     http-request set-header X-Forwarded-Proto http
     http-request redirect scheme https
-
 EOF
 
 # Generate HAProxy frontend https configuration
