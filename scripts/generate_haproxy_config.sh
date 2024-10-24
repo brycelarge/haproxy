@@ -118,11 +118,15 @@ frontend https
     bind        :443
 	mode        tcp
 	log			global
+	acl         https ssl_fc
     tcp-request inspect-delay	1s
 	tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
-    # [HTTPS-FRONTEND PLACEHOLDER]
+    # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
+
+    # Placed by yaml domain_mappings
+    # [HTTPS-FRONTEND EXTRA PLACEHOLDER]
 
 EOF
 
@@ -135,7 +139,6 @@ frontend https-offloading-ip-protection
 	mode			http
 	log			    global
     option			http-keep-alive
-	option			forwardfor
 	acl             https ssl_fc
 
 	http-request    set-var(txn.txnhost) hdr(host)
@@ -210,7 +213,7 @@ EOF
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
 replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND PLACEHOLDER\]" '.frontend.https[]' '    '
+replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection[]' '    '
 
