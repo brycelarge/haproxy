@@ -151,6 +151,8 @@ ENV CONFIG_AUTO_GENERATE=false \
 
 COPY root/ /
 COPY scripts/ /scripts/
+# For trusted proxy information
+COPY ./scripts/docker-network-vars.sh /etc/haproxy/docker-network-vars.sh
 
 # https://github.com/docker-library/haproxy/issues/200
 WORKDIR /var/lib/haproxy
