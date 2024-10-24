@@ -31,6 +31,14 @@ global
     maxconn 4096
     daemon
     hard-stop-after 15m
+
+    # Performance Optimizations
+    nbthread 4
+    cpu-map auto:1/1-4 0-3
+    # tune.ssl.maxrecord 1400
+    # tune.bufsize 32768
+
+    # acme thumbprnt
     setenv ACCOUNT_THUMBPRINT '${THUMBPRINT}'
 
     # Default socket configurations
@@ -56,6 +64,7 @@ global
 
     ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
     tune.ssl.default-dh-param 2048
+    tune.ssl.lifetime 600
 
 EOF
 
@@ -64,26 +73,13 @@ cat <<EOF >> "$HAPROXY_CFG"
 defaults
     log global
     mode http
+
     # Placed by yaml defaults
     # [DEFAULTS PLACEHOLDER]
 
-    # used for newer reload mechanism. See https://www.haproxy.com/blog/hitless-reloads-with-haproxy-howto/
-
-    # For log-format see https://www.haproxy.com/documentation/hapee/latest/onepage/#8.2.3
-    # For ltime see https://www.haproxy.com/documentation/hapee/latest/onepage/#ltime
-    #
-    # Use the terribly documented ltime() function.
-    # No reference to it in the docs except function the api itself
-    # Uses the same formatting params as strftime()
-    #
-    # C can't natively go more precise than seconds, but haproxy exposes the %ms
-    # variable we can use here
-    #
     # Our format here will produce 2021-01-01 08:00:01.565 +0200
-    log-format "%ci:%cp [%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
-    # https://cbonte.github.io/haproxy-dconv/2.5/configuration.html#8.2.5
-    # You can look up the ssl_fc_err with $ openssl errstr + the hex
-    error-log-format "%ci:%cp [%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
+    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
+    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
 
 EOF
 
@@ -108,11 +104,8 @@ frontend https
     bind        :443
 	mode        tcp
 	log			global
-	tcp-request inspect-delay	5s
+	tcp-request inspect-delay	1s
     tcp-request content accept if { req.ssl_hello_type 1 }
-
-    # Placed by yaml frontend https:
-    # [HTTPS-FRONTEND PLACEHOLDER]
 
     # Placed by yaml https_frontend_rules
     # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
@@ -127,20 +120,23 @@ frontend https-offloading-ip-protection
 
 	mode			http
 	log			    global
-	timeout client	300000
     option			http-keep-alive
 	option			forwardfor
 	acl             https ssl_fc
+
 	http-request    set-var(txn.txnhost) hdr(host)
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
-    http-request add-header X-Forwarded-Proto https
-    http-response set-header X-Frame-Options sameorigin
+	http-response   del-header ^Server:.*$
+	http-response   del-header ^X-Powered.*$
+    http-response   set-header X-Frame-Options sameorigin
+    http-response   set-header Strict-Transport-Security "max-age=63072000"
+	http-response   set-header X-XSS-Protection "1; mode=block"
+	http-response   set-header Referrer-Policy no-referrer-when-downgrade
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
     # Placed by yaml frontend https-offloading-ip-protection:
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
-
 EOF
 
 # Generate HAProxy frontend https-offloading configuration
@@ -151,11 +147,16 @@ frontend https-offloading
 
 	mode			http
 	log			    global
-	timeout client	300000
+	option		    forwardfor
+
 	http-request    set-var(txn.txnhost) hdr(host)
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
-    http-request add-header X-Forwarded-Proto https
-    http-response set-header X-Frame-Options sameorigin
+	http-response   del-header ^Server:.*$
+	http-response   del-header ^X-Powered.*$
+    http-response   set-header X-Frame-Options sameorigin
+    http-response   set-header Strict-Transport-Security "max-age=63072000"
+	http-response   set-header X-XSS-Protection "1; mode=block"
+	http-response   set-header Referrer-Policy no-referrer-when-downgrade
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
@@ -443,8 +444,6 @@ backend $name
     log global
     ${retries}
     ${server_line} ${health_check}
-	timeout connect 30000
-	timeout server 90000
 
 EOF
 
