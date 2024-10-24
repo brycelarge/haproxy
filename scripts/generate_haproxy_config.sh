@@ -73,6 +73,7 @@ cat <<EOF >> "$HAPROXY_CFG"
 defaults
     log global
     mode http
+    option dontlognull
 
     # Placed by yaml defaults
     # [DEFAULTS PLACEHOLDER]
@@ -80,6 +81,16 @@ defaults
     # Our format here will produce 2021-01-01 08:00:01.565 +0200
     log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
     error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
+
+EOF
+
+# Generate HAProxy defaults configuration
+cat <<EOF >> "$HAPROXY_CFG"
+cache my-cache
+    total-max-size 100     # MB
+    max-object-size 100000 # bytes
+    max-age 3600           # seconds
+    process-vary on
 
 EOF
 
@@ -93,7 +104,6 @@ frontend http
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
-    acl https ssl_fc
     http-request set-header X-Forwarded-Proto http
     http-request redirect scheme https
 EOF
@@ -104,7 +114,8 @@ frontend https
     bind        :443
 	mode        tcp
 	log			global
-	tcp-request inspect-delay	1s
+	acl         https ssl_fc
+    tcp-request inspect-delay	1s
     tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
@@ -147,7 +158,9 @@ frontend https-offloading
 
 	mode			http
 	log			    global
-	option		    forwardfor
+    option			http-keep-alive
+	option			forwardfor
+	acl             https ssl_fc
 
 	http-request    set-var(txn.txnhost) hdr(host)
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
@@ -392,6 +405,7 @@ generate_backend_configs() {
         
         health_check=""
         retries="retries 3"
+        cache=""
         
         # Special handling for frontend-offloading and frontend-offloading-ip-protection
         if [[ $name == "frontend-offloading" || $name == "frontend-offloading-ip-protection" ]]; then
@@ -404,6 +418,10 @@ generate_backend_configs() {
                 check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
                 check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
                 check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
+                cache="acl is_image path_end -i .jpg .jpeg .png .gif
+http-request cache-use my-cache if is_image
+http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
+"
                 
                 health_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
                 
@@ -444,6 +462,7 @@ backend $name
     log global
     ${retries}
     ${server_line} ${health_check}
+    ${cache}
 
 EOF
 
