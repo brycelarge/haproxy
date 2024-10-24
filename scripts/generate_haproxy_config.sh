@@ -97,6 +97,8 @@ EOF
 cat <<'EOF' >> "$HAPROXY_CFG"
 frontend http
     bind *:80
+    mode http
+    log	 global
 
     # ACME challenge
     http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
@@ -104,7 +106,9 @@ frontend http
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
-    http-request set-header X-Forwarded-Proto http
+    http-request set-header X-Forwarded-Proto https if { ssl_fc } # For Proto
+    http-request add-header X-Real-Ip %[src] # Custom header with src IP
+    option forwardfor # X-forwarded-for
     http-request redirect scheme https
 EOF
 
@@ -114,12 +118,11 @@ frontend https
     bind        :443
 	mode        tcp
 	log			global
-	acl         https ssl_fc
     tcp-request inspect-delay	1s
-    tcp-request content accept if { req.ssl_hello_type 1 }
+	tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
-    # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
+    # [HTTPS-FRONTEND PLACEHOLDER]
 
 EOF
 
@@ -136,13 +139,14 @@ frontend https-offloading-ip-protection
 	acl             https ssl_fc
 
 	http-request    set-var(txn.txnhost) hdr(host)
-    http-after-response add-header alt-svc 'h3=":443"; ma=60'
 	http-response   del-header ^Server:.*$
 	http-response   del-header ^X-Powered.*$
     http-response   set-header X-Frame-Options sameorigin
     http-response   set-header Strict-Transport-Security "max-age=63072000"
 	http-response   set-header X-XSS-Protection "1; mode=block"
 	http-response   set-header Referrer-Policy no-referrer-when-downgrade
+
+    http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
@@ -163,13 +167,14 @@ frontend https-offloading
 	acl             https ssl_fc
 
 	http-request    set-var(txn.txnhost) hdr(host)
-    http-after-response add-header alt-svc 'h3=":443"; ma=60'
 	http-response   del-header ^Server:.*$
 	http-response   del-header ^X-Powered.*$
     http-response   set-header X-Frame-Options sameorigin
     http-response   set-header Strict-Transport-Security "max-age=63072000"
 	http-response   set-header X-XSS-Protection "1; mode=block"
 	http-response   set-header Referrer-Policy no-referrer-when-downgrade
+
+    http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
