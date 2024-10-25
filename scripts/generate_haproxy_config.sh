@@ -139,6 +139,7 @@ frontend https-offloading-ip-protection
 	mode			http
 	log			    global
     option			http-keep-alive
+	option			forwardfor
 	acl             https ssl_fc
 
 	http-request    set-var(txn.txnhost) hdr(host)
@@ -148,6 +149,7 @@ frontend https-offloading-ip-protection
     http-response   set-header Strict-Transport-Security "max-age=63072000"
 	http-response   set-header X-XSS-Protection "1; mode=block"
 	http-response   set-header Referrer-Policy no-referrer-when-downgrade
+    http-request    set-header X-Forwarded-Proto https if { ssl_fc }
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
@@ -176,6 +178,7 @@ frontend https-offloading
     http-response   set-header Strict-Transport-Security "max-age=63072000"
 	http-response   set-header X-XSS-Protection "1; mode=block"
 	http-response   set-header Referrer-Policy no-referrer-when-downgrade
+    http-request    set-header X-Forwarded-Proto https if { ssl_fc }
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
