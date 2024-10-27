@@ -4,14 +4,9 @@ SOCKET="/var/lib/haproxy/admin.sock"
 PID_FILE="/var/run/haproxy/haproxy.pid"
 TIMEOUT=30
 
-# Function to run socket commands as HAProxy user
-run_as_haproxy() {
-    s6-setuidgid haproxy "$@"
-}
-
 # Function to check HAProxy status
 check_haproxy() {
-    run_as_haproxy echo "show info" | run_as_haproxy socat stdio "unix-connect:$SOCKET" > /dev/null 2>&1
+    s6-setuidgid haproxy socat stdio "unix-connect:$SOCKET" <<< "show info" > /dev/null 2>&1
     return $?
 }
 
@@ -40,7 +35,7 @@ fi
 
 # Perform soft reload
 echo "[Haproxy] Initiating soft reload..." | ts '%Y-%m-%d %H:%M:%S'
-if ! run_as_haproxy echo "reload" | run_as_haproxy socat stdio "unix-connect:$SOCKET"; then
+if ! s6-setuidgid haproxy socat stdio "unix-connect:$SOCKET" <<< "reload"; then
     EXIT_CODE=$?
     echo "[Haproxy] Error: Failed to trigger reload (exit code: $EXIT_CODE)" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
