@@ -46,6 +46,8 @@ global
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
 
+    pid-file /var/run/haproxy/haproxy.pid
+
     # [GLOBALS PLACEHOLDER]
 
     # rsyslogd has created a socket to listen on at /var/lib/haproxy/dev/log
