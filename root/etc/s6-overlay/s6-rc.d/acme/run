@@ -86,5 +86,5 @@ check_for_missing_domain_certs
 echo "[acme] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
 exec s6-setuidgid acme inotifywait -m "$HAPROXY_YAML" -e modify | while read -r file; do
     echo "[acme] detected changes to ${file}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
-    # check_for_missing_domain_certs;
+    check_for_missing_domain_certs;
 done
