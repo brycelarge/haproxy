@@ -31,6 +31,7 @@ ENV HAPROXY_BRANCH=3.1 \
     USE_GETADDRINFO=1 \
     USE_OPENSSL=1 \
     USE_SLZ=1 \
+    USE_BROTLI=1 \
     USE_PCRE2=1 USE_PCRE2_JIT=1 \
     LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib" \
     SSL_INC=/opt/quictls/include SSL_LIB=/opt/quictls/lib USE_QUIC=1 \
@@ -48,11 +49,16 @@ RUN \
         openssl-dev \
         pcre2-dev \
         curl \
+        git \
+        python3 \
+        cmake \
+        libbrotli-dev \
         zlib-dev && \
     echo "**** Make haproxy directories ****" && \
     mkdir -p \
         /etc/haproxy \
         /etc/haproxy/errors \
+        /etc/haproxy/conf.d \
         /etc/haproxy/certs \
     echo "**** Install Haproxy ****" && \
     curl -sfSL "${HAPROXY_SRC_URL}/${HAPROXY_BRANCH}/src/devel/haproxy-${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
@@ -65,7 +71,15 @@ RUN \
     rm -rf \
       /tmp/*
 
-RUN echo "**** Compiling Haproxy from source ****" && \
+RUN echo "**** Compiling brotli from source ****" && \ 
+    git clone https://github.com/google/brotli.git && \
+    cd brotli && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr .. && \
+    make && \
+    make install && \
+    echo "**** Compiling Haproxy from source ****" && \
     set -eux && \
 	nproc="$(getconf _NPROCESSORS_ONLN)" && \
 	eval "make -C /usr/src/haproxy -j '$nproc' all $HAPROXY_MAKE_OPTS" && \
@@ -78,12 +92,18 @@ FROM brycelarge/alpine-baseimage:latest
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /etc/haproxy /etc/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
+# Copy Brotli libraries from builder
+COPY --from=haproxy-builder /usr/lib/libbrotli*.so* /usr/lib/
+COPY --from=haproxy-builder /usr/bin/brotli /usr/bin/
 
 # Copy the custom scripts
 COPY ./conf.d/logrotate.d/haproxy /etc/logrotate.d/haproxy
 # Replace the file at 49-haproxy.conf that's pre-existing
 COPY ./conf.d/rsyslog.d/haproxy.conf /etc/rsyslog.d/49-haproxy.conf
 COPY ./conf.d/rsyslog.conf /etc/rsyslog.conf
+COPY ./conf.d/haproxy-ssl.cfg /etc/haproxy/conf.d/haproxy-ssl.cfg
+COPY ./conf.d/haproxy-compression.cfg /etc/haproxy/conf.d/haproxy-compression.cfg
+COPY ./conf.d/haproxy-security-headers.cfg /etc/haproxy/conf.d/haproxy-security-headers.cfg
 
 # Add in some performance tuning for high-volume network connections
 # For a great primer @see https://levelup.gitconnected.com/linux-kernel-tuning-for-high-performance-networking-high-volume-incoming-connections-196e863d458a
