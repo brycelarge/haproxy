@@ -35,8 +35,6 @@ global
     # Performance Optimizations
     nbthread 4
     cpu-map auto:1/1-4 0-3
-    # tune.ssl.maxrecord 1400
-    # tune.bufsize 32768
 
     # acme thumbprnt
     setenv ACCOUNT_THUMBPRINT '${THUMBPRINT}'
@@ -46,7 +44,7 @@ global
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
 
-    pid-file /var/run/haproxy/haproxy.pid
+    pidfile /var/run/haproxy/haproxy.pid
 
     # [GLOBALS PLACEHOLDER]
 
@@ -54,19 +52,8 @@ global
     # haproxy is chrooted to /var/lib/haproxy/ and can only write therein
     log /var/lib/haproxy/dev/log local0
 
-    # generated 2022-05-03, Mozilla Guideline v5.6, HAProxy 2.5, OpenSSL 1.1.1n, intermediate configuration
-    # https://ssl-config.mozilla.org/#server=haproxy&version=2.5&config=intermediate&openssl=1.1.1n&guideline=5.6
-    # intermediate configuration
-    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
-    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-    ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-    ssl-default-server-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
-    ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-    ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-
-    ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
-    tune.ssl.default-dh-param 2048
-    tune.ssl.lifetime 600
+    # Include SSL/TLS configuration
+    include /etc/haproxy/conf.d/haproxy-ssl.cfg
 
 EOF
 
@@ -144,13 +131,12 @@ frontend https-offloading-ip-protection
 	option			forwardfor
 
 	http-request    set-var(txn.txnhost) hdr(host)
-	http-response   del-header ^Server:.*$
-	http-response   del-header ^X-Powered.*$
-    http-response   set-header X-Frame-Options sameorigin
-    http-response   set-header Strict-Transport-Security "max-age=63072000"
-	http-response   set-header X-XSS-Protection "1; mode=block"
-	http-response   set-header Referrer-Policy no-referrer-when-downgrade
-    http-request    set-header X-Forwarded-Proto https
+
+    # Include security headers configuration
+    include /etc/haproxy/conf.d/haproxy-security-headers.cfg
+
+    # Compression
+    include /etc/haproxy/conf.d/haproxy-compression.cfg
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
@@ -172,13 +158,12 @@ frontend https-offloading
 	option			forwardfor
 
 	http-request    set-var(txn.txnhost) hdr(host)
-	http-response   del-header ^Server:.*$
-	http-response   del-header ^X-Powered.*$
-    http-response   set-header X-Frame-Options sameorigin
-    http-response   set-header Strict-Transport-Security "max-age=63072000"
-	http-response   set-header X-XSS-Protection "1; mode=block"
-	http-response   set-header Referrer-Policy no-referrer-when-downgrade
-    http-request    set-header X-Forwarded-Proto https
+
+    # Include security headers configuration
+    include /etc/haproxy/conf.d/haproxy-security-headers.cfg
+
+    # Compression
+    include /etc/haproxy/conf.d/haproxy-compression.cfg
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
 
@@ -474,6 +459,10 @@ backend $name
     ${retries}
     ${server_line} ${health_check}
     ${cache}
+
+    # Double-check for compressed responses from backend
+    acl backend_compressed res.hdr(Content-Encoding) -m found
+    compression off if backend_compressed
 
 EOF
 
