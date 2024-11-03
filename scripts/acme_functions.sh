@@ -148,7 +148,6 @@ issue_cert() {
     fi
 
     release_lock;
-    deploy_cert "${1}";
 }
 
 deploy_cert() {

@@ -28,15 +28,31 @@ ENV HAPROXY_BRANCH=3.1 \
     HAPROXY_SRC_URL=http://www.haproxy.org/download \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
+    # Core functionality
     USE_GETADDRINFO=1 \
+    USE_ACCEPT4=1 \
+    USE_LINUX_TPROXY=1 \
+    USE_THREAD=1 \
+    USE_CPU_AFFINITY=1 \
+    # SSL/TLS & QUIC
     USE_OPENSSL=1 \
+    USE_QUIC=1 \
+    SSL_INC=/opt/quictls/include \
+    SSL_LIB=/opt/quictls/lib \
+    # Performance
+    USE_NS=1 \
+    USE_TFO=1 \
+    USE_LINUX_SPLICE=1 \
+    USE_NETFILTER=1 \
+    # Other haproxy options
     USE_SLZ=1 \
-    USE_BROTLI=1 \
-    USE_PCRE2=1 USE_PCRE2_JIT=1 \
-    LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib" \
-    SSL_INC=/opt/quictls/include SSL_LIB=/opt/quictls/lib USE_QUIC=1 \
-    USE_LUA=1 LUA_INC=/usr/include/lua5.4 LUA_LIB=/usr/lib/lua5.4 \
+    USE_PCRE2=1 \
+    USE_PCRE2_JIT=1 \
+    USE_LUA=1 \
+    LUA_INC=/usr/include/lua5.4 \
+    LUA_LIB=/usr/lib/lua5.4 \
     USE_PROMEX=1 \
+    LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
     EXTRA_OBJS='
 RUN \
     echo "**** Install haproxy build packages ****" && \
@@ -69,17 +85,13 @@ RUN \
     rm -rf \
       /tmp/*
 
-RUN echo "**** Compiling brotli from source ****" && \ 
-    git clone https://github.com/google/brotli.git && \
-    cd brotli && \
-    mkdir build && \
-    cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr .. && \
-    make && \
-    make install && \
+RUN \
     echo "**** Compiling Haproxy from source ****" && \
+    cd /usr/src/haproxy && \
     set -eux && \
 	nproc="$(getconf _NPROCESSORS_ONLN)" && \
+    PKG_CONFIG_PATH=/usr/lib/pkgconfig && \
+    LD_LIBRARY_PATH="/usr/lib" && \
 	eval "make -C /usr/src/haproxy -j '$nproc' all $HAPROXY_MAKE_OPTS" && \
 	eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_OPTS" && \
     echo "**** Setting up Haproxy folders and cleaning up ****" && \
@@ -90,9 +102,6 @@ FROM brycelarge/alpine-baseimage:latest
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /etc/haproxy /etc/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
-# Copy Brotli libraries from builder
-COPY --from=haproxy-builder /usr/lib/libbrotli*.so* /usr/lib/
-COPY --from=haproxy-builder /usr/bin/brotli /usr/bin/
 
 # Copy the custom scripts
 COPY ./conf.d/logrotate.d/haproxy /etc/logrotate.d/haproxy
