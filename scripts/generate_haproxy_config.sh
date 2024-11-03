@@ -73,7 +73,7 @@ defaults
 
 EOF
 
-# Generate HAProxy defaults configuration
+# Generate HAProxy caching configuration
 cat <<EOF >> "$HAPROXY_CFG"
 cache my-cache
     total-max-size 100     # MB
@@ -101,8 +101,9 @@ frontend http
     http-request redirect scheme https
 EOF
 
-# Generate HAProxy frontend https configuration
-cat <<EOF >> "$HAPROXY_CFG"
+# Generate HAProxy frontend https configuration only if MIXED_SSL_MODE
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    cat <<EOF >> "$HAPROXY_CFG"
 frontend https
     bind        :443
 	mode        tcp
@@ -118,11 +119,12 @@ frontend https
     # [HTTPS-FRONTEND EXTRA PLACEHOLDER]
 
 EOF
+fi
 
 # Generate HAProxy frontend https-offloading-ip-protection configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
-	bind			127.0.0.1:8443 name 127.0.0.1:8443 ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+    bind            ${MIXED_SSL_MODE:+127.0.0.1:8444 name 127.0.0.1:8444}${MIXED_SSL_MODE:-:443} ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
 	bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
 
 	mode			http
@@ -149,7 +151,7 @@ EOF
 # Generate HAProxy frontend https-offloading configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
-	bind			127.0.0.1:8444 name 127.0.0.1:8444 ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+    bind            ${MIXED_SSL_MODE:+127.0.0.1:8444 name 127.0.0.1:8444}${MIXED_SSL_MODE:-:443} ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
 	bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
 
 	mode			http
@@ -173,6 +175,25 @@ frontend https-offloading
     # [HTTPS-FRONTEND-OFFLOADING PLACEHOLDER]
 
 EOF
+
+# Generate HAProxy mixmode ssl backend
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    cat <<EOF >> "$HAPROXY_CFG"
+backend frontend-offloading
+    mode tcp
+    id 10
+    log global
+    retries 3
+    server frontend-offloading-srv unix@/var/lib/haproxy/frontend-offloading.sock send-proxy-v2-ssl-cn check inter 5000
+EOF
+fi
+
+backend frontend-offloading-ip-protection
+    mode tcp
+    id 11
+    log global
+    retries 3
+    server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn check inter 5000
 
 # Convert YAML to JSON
 JSON_CONFIG=$(yq eval -o=json "$YAML_FILE")
@@ -201,9 +222,18 @@ EOF
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
 replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection[]' '    '
+
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[]' '    '
+else
+    # Generate individual ACLs for frontend-offloading-ip-protection
+    while read -r domain; do
+        config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
+"
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]')
+fi
 
 # Function to generate HTTPS frontend configuration
 generate_https_frontend_config() {
@@ -372,8 +402,8 @@ EOF
 
 # Function to generate backend configurations
 generate_backend_configs() {
-    local backend_id=10
-    local server_id=100
+    local backend_id=13
+    local server_id=103
 
     debug_log "Generating backend configurations"
     echo "$JSON_CONFIG" | jq -c '.backends[]' | while read -r backend; do
@@ -403,51 +433,45 @@ generate_backend_configs() {
         retries="retries 3"
         cache=""
         
-        # Special handling for frontend-offloading and frontend-offloading-ip-protection
-        if [[ $name == "frontend-offloading" || $name == "frontend-offloading-ip-protection" ]]; then
-            socket_path="/var/lib/haproxy/${name}.sock"
-            server_line="server ${name}-srv unix@${socket_path} send-proxy-v2-ssl-cn"
-            health_check="check inter 5000"
-        else
-            if echo "$backend" | jq -e '.check' > /dev/null; then
-                check_type=$(echo "$backend" | jq -r '.check.type // "tcp"')
-                check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
-                check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
-                check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
-                cache="acl is_image path_end -i .jpg .jpeg .png .gif
+
+        if echo "$backend" | jq -e '.check' > /dev/null; then
+            check_type=$(echo "$backend" | jq -r '.check.type // "tcp"')
+            check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
+            check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
+            check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
+            cache="acl is_image path_end -i .jpg .jpeg .png .gif
 http-request cache-use my-cache if is_image
 http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
 "
-                
-                health_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
-                
-                case $check_type in
-                    http)
-                        check_uri=$(echo "$backend" | jq -r '.check.uri // "/"')
-                        health_check="${health_check} httpchk GET ${check_uri}"
-                        ;;
-                    ssl)
-                        check_verify=$(echo "$backend" | jq -r '.check.verify // "none"')
-                        health_check="${health_check} ssl verify ${check_verify}"
-                        ;;
-                    tcp)
-                        # TCP check doesn't need additional parameters
-                        ;;
-                    *)
-                        debug_log "Warning: Unknown check type '${check_type}' for backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
-                        ;;
-                esac
-            fi
-
-            ssl_options=""
-            if [ "$is_ssl" = "true" ]; then
-                ssl_options="ssl"
-                if [ "$ssl_verify" = "false" ]; then
-                    ssl_options="${ssl_options} verify none"
-                fi
-            fi
-            server_line="server ${name}-srv ${server_address}${ssl_options:+ $ssl_options}"
+            
+            health_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
+            
+            case $check_type in
+                http)
+                    check_uri=$(echo "$backend" | jq -r '.check.uri // "/"')
+                    health_check="${health_check} httpchk GET ${check_uri}"
+                    ;;
+                ssl)
+                    check_verify=$(echo "$backend" | jq -r '.check.verify // "none"')
+                    health_check="${health_check} ssl verify ${check_verify}"
+                    ;;
+                tcp)
+                    # TCP check doesn't need additional parameters
+                    ;;
+                *)
+                    debug_log "Warning: Unknown check type '${check_type}' for backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
+                    ;;
+            esac
         fi
+
+        ssl_options=""
+        if [ "$is_ssl" = "true" ]; then
+            ssl_options="ssl"
+            if [ "$ssl_verify" = "false" ]; then
+                ssl_options="${ssl_options} verify none"
+            fi
+        fi
+        server_line="server ${name}-srv ${server_address}${ssl_options:+ $ssl_options}"
 
         debug_log "Server line for backend $name: $server_line ${health_check}"
 
@@ -471,10 +495,12 @@ EOF
     done
 }
 
-# Main execution
-generate_https_frontend_config;
-generate_https_offloading_frontend_config;
-generate_https_offloading_ip_protection_frontend_config;
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    generate_https_frontend_config;
+    generate_https_offloading_frontend_config;
+    generate_https_offloading_ip_protection_frontend_config;
+fi
+
 generate_backend_configs;
 
 echo "[haproxy] Configuration generation complete." | ts '%Y-%m-%d %H:%M:%S'
