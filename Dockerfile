@@ -24,7 +24,7 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 # haproxy build environment variables
 ENV HAPROXY_BRANCH=3.1 \
     HAPROXY_MINOR=3.1-dev11 \
-    HAPROXY_SHA256=185b85db5092bc6dfbc4ab2e221c867caef5479bb623cc25f9d3c865b8d0be3f \
+    HAPROXY_SHA256=fa03ee5355ca6168b8e74cb444ff8fa8362bce2fd11675da6c2776e64f1b3ebd \
     HAPROXY_SRC_URL=http://www.haproxy.org/download \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
