@@ -57,7 +57,6 @@ RUN \
     mkdir -p \
         /etc/haproxy \
         /etc/haproxy/errors \
-        /etc/haproxy/conf.d \
         /etc/haproxy/certs \
     echo "**** Install Haproxy ****" && \
     curl -sfSL "${HAPROXY_SRC_URL}/${HAPROXY_BRANCH}/src/devel/haproxy-${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
@@ -100,9 +99,6 @@ COPY ./conf.d/logrotate.d/haproxy /etc/logrotate.d/haproxy
 # Replace the file at 49-haproxy.conf that's pre-existing
 COPY ./conf.d/rsyslog.d/haproxy.conf /etc/rsyslog.d/49-haproxy.conf
 COPY ./conf.d/rsyslog.conf /etc/rsyslog.conf
-COPY ./conf.d/haproxy-ssl.cfg /etc/haproxy/conf.d/haproxy-ssl.cfg
-COPY ./conf.d/haproxy-compression.cfg /etc/haproxy/conf.d/haproxy-compression.cfg
-COPY ./conf.d/haproxy-security-headers.cfg /etc/haproxy/conf.d/haproxy-security-headers.cfg
 
 # Add in some performance tuning for high-volume network connections
 # For a great primer @see https://levelup.gitconnected.com/linux-kernel-tuning-for-high-performance-networking-high-volume-incoming-connections-196e863d458a

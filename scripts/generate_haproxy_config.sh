@@ -52,8 +52,19 @@ global
     # haproxy is chrooted to /var/lib/haproxy/ and can only write therein
     log /var/lib/haproxy/dev/log local0
 
-    # Include SSL/TLS configuration
-    include /etc/haproxy/conf.d/haproxy-ssl.cfg
+    # generated 2022-05-03, Mozilla Guideline v5.6, HAProxy 2.5, OpenSSL 1.1.1n, intermediate configuration
+    # https://ssl-config.mozilla.org/#server=haproxy&version=2.5&config=intermediate&openssl=1.1.1n&guideline=5.6
+    # intermediate configuration
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+    ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+    ssl-default-server-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+    ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+
+    ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
+    tune.ssl.default-dh-param 2048
+    tune.ssl.lifetime 600
 
 EOF
 
@@ -70,6 +81,53 @@ defaults
     # Our format here will produce 2021-01-01 08:00:01.565 +0200
     log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
     error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
+
+    # Basic compression settings
+    compression algo gzip deflate
+
+    # File types to compress
+    compression type text/html
+    compression type text/plain
+    compression type text/css
+    compression type text/xml
+    compression type text/javascript
+    compression type text/calendar
+    compression type text/markdown
+    compression type text/vcard
+    compression type text/vtt
+    compression type text/x-component
+    compression type text/x-cross-domain-policy
+    compression type application/javascript
+    compression type application/x-javascript
+    compression type application/json
+    compression type application/ld+json
+    compression type application/manifest+json
+    compression type application/schema+json
+    compression type application/vnd.api+json
+    compression type application/vnd.geo+json
+    compression type application/xml
+    compression type application/xhtml+xml
+    compression type application/rss+xml
+    compression type application/atom+xml
+    compression type application/soap+xml
+    compression type application/x-httpd-php
+    compression type font/collection
+    compression type font/opentype
+    compression type font/otf
+    compression type font/ttf
+    compression type application/x-font-ttf
+    compression type application/x-font-opentype
+    compression type application/x-font-truetype
+    compression type application/vnd.ms-fontobject
+    compression type application/font-sfnt
+    compression type application/font-woff
+    compression type application/font-woff2
+    compression type image/svg+xml
+    compression type image/x-icon
+    compression type application/pdf
+    compression type application/x-yaml
+    compression type application/yaml
+    compression type application/rtf
 
 EOF
 
@@ -99,6 +157,7 @@ frontend http
     http-request add-header X-Real-Ip %[src] # Custom header with src IP
     option forwardfor # X-forwarded-for
     http-request redirect scheme https
+
 EOF
 
 # Generate HAProxy frontend https configuration only if MIXED_SSL_MODE
@@ -134,18 +193,36 @@ frontend https-offloading-ip-protection
 
 	http-request    set-var(txn.txnhost) hdr(host)
 
-    # Include security headers configuration
-    include /etc/haproxy/conf.d/haproxy-security-headers.cfg
+    # Remove server information headers
+    http-response del-header ^Server:.*$
+    http-response del-header ^X-Powered.*$
 
-    # Compression
-    include /etc/haproxy/conf.d/haproxy-compression.cfg
+    # Security headers
+    http-response set-header X-Frame-Options sameorigin
+    http-response set-header Strict-Transport-Security "max-age=63072000"
+    http-response set-header X-XSS-Protection "1; mode=block"
+    http-response set-header X-Content-Type-Options nosniff
+    http-response set-header Referrer-Policy no-referrer-when-downgrade
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
+
+    # Compression controls
+    acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
+    acl has_content_encoding hdr(Content-Encoding) -m found
+    acl accept_encoding hdr(Accept-Encoding) -m found
+
+    # Compression monitoring headers
+    http-response set-header X-Compressed true if { res.comp }
+    http-response del-header X-Compressed if !{ res.comp }
+    http-response set-header Vary Accept-Encoding
+
+    compression offload
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
     # Placed by yaml frontend https-offloading-ip-protection:
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
+
 EOF
 
 # Generate HAProxy frontend https-offloading configuration
@@ -161,13 +238,30 @@ frontend https-offloading
 
 	http-request    set-var(txn.txnhost) hdr(host)
 
-    # Include security headers configuration
-    include /etc/haproxy/conf.d/haproxy-security-headers.cfg
+    # Remove server information headers
+    http-response del-header ^Server:.*$
+    http-response del-header ^X-Powered.*$
 
-    # Compression
-    include /etc/haproxy/conf.d/haproxy-compression.cfg
+    # Security headers
+    http-response set-header X-Frame-Options sameorigin
+    http-response set-header Strict-Transport-Security "max-age=63072000"
+    http-response set-header X-XSS-Protection "1; mode=block"
+    http-response set-header X-Content-Type-Options nosniff
+    http-response set-header Referrer-Policy no-referrer-when-downgrade
 
     http-after-response add-header alt-svc 'h3=":443"; ma=60'
+    
+    # Compression controls
+    acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
+    acl has_content_encoding hdr(Content-Encoding) -m found
+    acl accept_encoding hdr(Accept-Encoding) -m found
+
+    # Compression monitoring headers
+    http-response set-header X-Compressed true if { res.comp }
+    http-response del-header X-Compressed if !{ res.comp }
+    http-response set-header Vary Accept-Encoding
+
+    compression offload
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
@@ -185,15 +279,19 @@ backend frontend-offloading
     log global
     retries 3
     server frontend-offloading-srv unix@/var/lib/haproxy/frontend-offloading.sock send-proxy-v2-ssl-cn check inter 5000
+
 EOF
 fi
 
+cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading-ip-protection
     mode tcp
     id 11
     log global
     retries 3
     server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn check inter 5000
+
+EOF
 
 # Convert YAML to JSON
 JSON_CONFIG=$(yq eval -o=json "$YAML_FILE")
@@ -433,7 +531,6 @@ generate_backend_configs() {
         retries="retries 3"
         cache=""
         
-
         if echo "$backend" | jq -e '.check' > /dev/null; then
             check_type=$(echo "$backend" | jq -r '.check.type // "tcp"')
             check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
@@ -483,11 +580,6 @@ backend $name
     ${retries}
     ${server_line} ${health_check}
     ${cache}
-
-    # Double-check for compressed responses from backend
-    acl backend_compressed res.hdr(Content-Encoding) -m found
-    compression off if backend_compressed
-
 EOF
 
         backend_id=$((backend_id + 1))
