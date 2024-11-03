@@ -52,7 +52,6 @@ RUN \
         git \
         python3 \
         cmake \
-        libbrotli-dev \
         zlib-dev && \
     echo "**** Make haproxy directories ****" && \
     mkdir -p \
