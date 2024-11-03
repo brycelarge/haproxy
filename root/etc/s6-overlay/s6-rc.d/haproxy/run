@@ -3,6 +3,7 @@
 
 file1="/config/acme/ca/thumbprint"
 file2="/config/acme/tls1-params/ffdhe2048"
+HAPROXY_YAML="/config/haproxy.yaml"
 
 source /scripts/debug.sh;
 
@@ -45,6 +46,8 @@ fi
 echo "[Haproxy] is monitoring your haproxy.yaml file for changes, if changes are detected we will reload without restarting" | ts '%Y-%m-%d %H:%M:%S'
 exec s6-setuidgid acme inotifywait -m "$HAPROXY_YAML" -e modify | while read -r file; do
     echo "[Haproxy] detected changes to ${file}, reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
+    # regenerate the cfg file
+    s6-setuidgid acme /scripts/generate_haproxy_config.sh;
     
     # Run the reload script
     if /scripts/reload-haproxy.sh; then
