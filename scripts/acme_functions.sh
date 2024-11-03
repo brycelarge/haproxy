@@ -4,10 +4,6 @@ if [ -f /etc/profile ]; then
     source /etc/profile
 fi
 
-set -eo pipefail
-shopt -s nullglob
-shopt -s lastpipe
-
 # Variables
 USER="acme"
 HOME_DIR="/config/acme"
