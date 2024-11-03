@@ -65,9 +65,6 @@ RUN \
         openssl-dev \
         pcre2-dev \
         curl \
-        git \
-        python3 \
-        cmake \
         zlib-dev && \
     echo "**** Make haproxy directories ****" && \
     mkdir -p \
