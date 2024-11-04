@@ -79,8 +79,8 @@ defaults
     # [DEFAULTS PLACEHOLDER]
 
     # Our format here will produce 2021-01-01 08:00:01.565 +0200
-    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
-    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
+    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
+    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %{+Q}r %[ssl_fc_sni]/%sslv/%sslc"
 
     # Basic compression settings
     compression algo gzip deflate
@@ -147,6 +147,9 @@ frontend http
     mode http
     log	 global
 
+    # Clients real IP variable
+    http-request set-var(txn.real_ip) src
+
     # ACME challenge
     http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
 
@@ -191,6 +194,9 @@ frontend https-offloading-ip-protection
 	log			    global
     option			http-keep-alive
 	option			forwardfor
+
+    # Clients real IP variable
+    http-request set-var(txn.real_ip) src if !{ var(txn.real_ip) -m found }
 
 	http-request    set-var(txn.txnhost) hdr(host)
 
@@ -240,6 +246,9 @@ frontend https-offloading
 	log			    global
     option			http-keep-alive
 	option			forwardfor
+
+    # Clients real IP variable
+    http-request set-var(txn.real_ip) src if !{ var(txn.real_ip) -m found }
 
 	http-request    set-var(txn.txnhost) hdr(host)
 
