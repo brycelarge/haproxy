@@ -195,8 +195,8 @@ frontend https-offloading-ip-protection
 	http-request    set-var(txn.txnhost) hdr(host)
 
     # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc }
-    http-request add-header X-Real-Ip %[src]
+    http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
+    http-request add-header X-Real-Ip %[src] !{ req.hdr(X-Real-Ip) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
@@ -244,8 +244,8 @@ frontend https-offloading
 	http-request    set-var(txn.txnhost) hdr(host)
 
     # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc }
-    http-request add-header X-Real-Ip %[src]
+    http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
+    http-request add-header X-Real-Ip %[src] !{ req.hdr(X-Real-Ip) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
