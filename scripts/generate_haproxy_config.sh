@@ -153,6 +153,7 @@ frontend http
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
+    # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } # For Proto
     http-request add-header X-Real-Ip %[src] # Custom header with src IP
     option forwardfor # X-forwarded-for
@@ -192,6 +193,10 @@ frontend https-offloading-ip-protection
 	option			forwardfor
 
 	http-request    set-var(txn.txnhost) hdr(host)
+
+    # Proxy headers
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    http-request add-header X-Real-Ip %[src]
 
     # Remove server information headers
     http-response del-header ^Server:.*$
@@ -237,6 +242,10 @@ frontend https-offloading
 	option			forwardfor
 
 	http-request    set-var(txn.txnhost) hdr(host)
+
+    # Proxy headers
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    http-request add-header X-Real-Ip %[src]
 
     # Remove server information headers
     http-response del-header ^Server:.*$
