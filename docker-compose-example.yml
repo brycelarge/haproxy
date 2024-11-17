@@ -1,18 +1,49 @@
+version: '3.8'
+
 services:
   haproxy:
-    image: brycelarge/haproxy:3.0.5
+    image: brycelarge/haproxy:latest
+    container_name: haproxy
     volumes:
       - ./config:/config
-      - /logs:/var/log/haproxy
+      - /var/log/haproxy:/var/log/haproxy
     environment:
+      # Core Settings
+      - HAPROXY_THREADS=4
+      - HAPROXY_BIND_IP=0.0.0.0
       - CONFIG_AUTO_GENERATE=false
-      - CF_Email=
-      - CF_Key=
-      - CF_Token=
-      - CF_Account_ID=
-      - CF_Zone_ID=
-      # or use 
-      - ACME_EMAIL=
+      - MIXED_SSL_MODE=true
+      - HA_DEBUG=false
+
+      # QUIC/HTTP3 Settings
+      - H3_29_SUPPORT=true
+      - QUIC_MAX_AGE=86400
+
+      # ACME/SSL Settings
+      - ACME_EMAIL=your-email@example.com
+
     ports:
-      - "8008:80"
-      - "8843:443"
+      # HTTP
+      - "80:80"
+      # HTTPS
+      - "443:443"
+      # QUIC/UDP
+      - "8443:443/udp"
+    
+    healthcheck:
+      test: ["CMD", "/scripts/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
