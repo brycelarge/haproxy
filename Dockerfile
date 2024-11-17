@@ -54,6 +54,7 @@ ENV HAPROXY_BRANCH=3.1 \
     USE_PROMEX=1 \
     LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
     EXTRA_OBJS='
+COPY errors/ /etc/haproxy/errors/
 RUN \
     echo "**** Install haproxy build packages ****" && \
     apk add --no-cache \
