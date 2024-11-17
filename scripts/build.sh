@@ -242,6 +242,10 @@ build_and_push() {
         exit 1
     fi
     
+    # Update compose file with correct version
+    sed -i.bak "s|image: ${docker_repo}:.*|image: ${docker_repo}:${version}|" docker-compose-example.yml
+    rm docker-compose-example.yml.bak
+    
     log "Building Docker image..."
     docker compose -f docker-compose-example.yml build \
         --build-arg BUILD_DATE="$build_date" \

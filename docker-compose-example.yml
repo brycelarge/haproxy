@@ -2,7 +2,7 @@ name: haproxy
 
 services:
   haproxy:
-    image: brycelarge/haproxy:latest
+    image: brycelarge/haproxy:3.0.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -35,6 +35,8 @@ services:
       - "443:443"
       # QUIC/UDP
       - "8443:443/udp"
+      # Stats
+      - "8404:8404"
     
     healthcheck:
       test: ["CMD", "/scripts/healthcheck.sh"]
@@ -42,7 +44,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
+    
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
