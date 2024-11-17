@@ -5,27 +5,36 @@ YAML_FILE=/config/haproxy.yaml
 HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 
-# Remove existing config file if it exists and create a new one
-[ -e "$HAPROXY_CFG" ] && rm "$HAPROXY_CFG"
-touch "$HAPROXY_CFG"
-
-# Loop until ACME_THUMBPRINT_PATH exists
 while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
     echo "[haproxy] Waiting for $ACME_THUMBPRINT_PATH to be created before creating configuration..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 3
 done
-
 THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
 
-# Remove existing config file if it exists and create a new one
+: "${HAPROXY_THREADS:=4}"
+: "${QUIC_MAX_AGE:=86400}"
+: "${H3_29_SUPPORT:=true}"
+
 [ -e "$HAPROXY_CFG" ] && rm "$HAPROXY_CFG"
 touch "$HAPROXY_CFG"
+
+if [ -z "${HAPROXY_BIND_IP}" ]; then
+    HAPROXY_BIND_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+    if [ -z "${HAPROXY_BIND_IP}" ]; then
+        HAPROXY_BIND_IP="0.0.0.0"
+    fi
+fi
 
 source /scripts/debug.sh
 
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
-# Generate HAProxy globals configuration
+if [ "$H3_29_SUPPORT" = "true" ]; then
+    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}, h3-29=\":443\"; ma=3600"
+else
+    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}"
+fi
+
 cat <<EOF >> "$HAPROXY_CFG"
 global
     maxconn 4096
@@ -33,8 +42,8 @@ global
     hard-stop-after 15m
 
     # Performance Optimizations
-    nbthread 4
-    cpu-map auto:1/1-4 0-3
+    nbthread ${HAPROXY_THREADS}
+    cpu-map auto:1/1-${HAPROXY_THREADS} 0-$((HAPROXY_THREADS-1))
 
     # acme thumbprnt
     setenv ACCOUNT_THUMBPRINT '${THUMBPRINT}'
@@ -64,7 +73,6 @@ global
 
     ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
     tune.ssl.default-dh-param 2048
-    tune.ssl.lifetime 600
 
 EOF
 
@@ -141,39 +149,40 @@ cache my-cache
 
 EOF
 
-cat <<'EOF' >> "$HAPROXY_CFG"
+cat <<EOF >> "$HAPROXY_CFG"
 frontend http
-    bind *:80
-    mode http
-    log	 global
-
-    # Clients real IP variable
-    http-request set-var(txn.real_ip) src
+    bind        ${HAPROXY_BIND_IP}:80
+    mode        http
+    log	        global
 
     # ACME challenge
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
 
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } # For Proto
-    http-request add-header X-Real-Ip %[src] # Custom header with src IP
     option forwardfor # X-forwarded-for
     http-request redirect scheme https
 
+    http-response set-header alt-svc "${ALT_SVC}"
+
 EOF
 
-# Generate HAProxy frontend https configuration only if MIXED_SSL_MODE
 if [ "$MIXED_SSL_MODE" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 frontend https
-    bind        :443
-	mode        tcp
-	log			global
-	acl         https ssl_fc
-    tcp-request inspect-delay	1s
-	tcp-request content accept if { req.ssl_hello_type 1 }
+    bind        ${HAPROXY_BIND_IP}:443
+    mode        tcp
+    log         global
+    option      dontlognull
+    no-option   dontlog-normal
+    option      log-separate-errors
+
+    # Strict TLS inspection with timeout
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
     # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
@@ -184,25 +193,18 @@ frontend https
 EOF
 fi
 
-# Generate HAProxy frontend https-offloading-ip-protection configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
-    bind            ${MIXED_SSL_MODE:+127.0.0.1:8444 name 127.0.0.1:8444}${MIXED_SSL_MODE:-:443} ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
-	bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+    bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
+    mode            http
+    log             global
+    option          http-keep-alive
+    option          forwardfor
 
-	mode			http
-	log			    global
-    option			http-keep-alive
-	option			forwardfor
-
-    # Clients real IP variable
-    http-request set-var(txn.real_ip) src if !{ var(txn.real_ip) -m found }
-
-	http-request    set-var(txn.txnhost) hdr(host)
+    http-request    set-var(txn.txnhost) hdr(host)
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-    http-request add-header X-Real-Ip %[src] !{ req.hdr(X-Real-Ip) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
@@ -214,8 +216,8 @@ frontend https-offloading-ip-protection
     http-response set-header X-XSS-Protection "1; mode=block"
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
-
-    http-after-response add-header alt-svc 'h3=":443"; ma=60'
+    
+    http-response set-header alt-svc "${ALT_SVC}"
 
     # Compression controls
     acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
@@ -236,25 +238,23 @@ frontend https-offloading-ip-protection
 
 EOF
 
-# Generate HAProxy frontend https-offloading configuration
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
-    bind            ${MIXED_SSL_MODE:+127.0.0.1:8444 name 127.0.0.1:8444}${MIXED_SSL_MODE:-:443} ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
-	bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h3,h2,http/1.1
+    bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
+    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS}
+    mode            http
+    log             global
+    option          http-keep-alive
+    option          forwardfor
 
-	mode			http
-	log			    global
-    option			http-keep-alive
-	option			forwardfor
+    # Add proxy protocol handling
+    declare capture request len 40
+    http-request capture req.hdr(X-Forwarded-For) id 0
 
-    # Clients real IP variable
-    http-request set-var(txn.real_ip) src if !{ var(txn.real_ip) -m found }
-
-	http-request    set-var(txn.txnhost) hdr(host)
+    http-request    set-var(txn.txnhost) hdr(host)
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-    http-request add-header X-Real-Ip %[src] !{ req.hdr(X-Real-Ip) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
@@ -267,7 +267,7 @@ frontend https-offloading
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
 
-    http-after-response add-header alt-svc 'h3=":443"; ma=60'
+    http-response set-header alt-svc "${ALT_SVC}"
     
     # Compression controls
     acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
@@ -288,7 +288,6 @@ frontend https-offloading
 
 EOF
 
-# Generate HAProxy mixmode ssl backend
 if [ "$MIXED_SSL_MODE" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading
@@ -296,7 +295,7 @@ backend frontend-offloading
     id 10
     log global
     retries 3
-    server frontend-offloading-srv unix@/var/lib/haproxy/frontend-offloading.sock send-proxy-v2-ssl-cn check inter 5000
+    server frontend-offloading-srv unix@/var/lib/haproxy/frontend-offloading.sock send-proxy-v2-ssl-cn
 
 EOF
 fi
@@ -307,12 +306,15 @@ backend frontend-offloading-ip-protection
     id 11
     log global
     retries 3
-    server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn check inter 5000
+    server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn
 
 EOF
 
-# Convert YAML to JSON
-JSON_CONFIG=$(yq eval -o=json "$YAML_FILE")
+# Convert YAML to JSON and check for errors
+if ! JSON_CONFIG=$(yq eval -o=json "$YAML_FILE"); then
+    echo "[haproxy] Error: Failed to convert YAML configuration to JSON" | ts '%Y-%m-%d %H:%M:%S'
+    exit 1
+fi
 
 # Function to replace placeholders with YAML data
 replace_placeholder() {
