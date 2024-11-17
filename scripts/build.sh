@@ -228,6 +228,44 @@ get_haproxy_sha256() {
     echo "$sha256"
 }
 
+build_and_push() {
+    local version="$1"
+    local docker_repo="$2"
+    local build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+    local dev_mode="${3:-false}"
+    
+    version=$(echo "$version" | xargs)
+    docker_repo=$(echo "$docker_repo" | xargs)
+    
+    if [ -z "$version" ] || [ -z "$docker_repo" ]; then
+        log "Error: Version or Docker repository not specified"
+        exit 1
+    fi
+    
+    log "Building Docker image..."
+    docker compose -f docker-compose-example.yml build \
+        --build-arg BUILD_DATE="$build_date" \
+        --pull \
+        haproxy
+    
+    if [ "$dev_mode" = "true" ]; then
+        log "Tagging dev version..."
+        docker tag "${docker_repo}:${version}" "${docker_repo}:${version}-dev"
+        
+        log "Pushing dev image..."
+        docker push "${docker_repo}:${version}-dev"
+    else
+        log "Tagging latest..."
+        docker tag "${docker_repo}:${version}" "${docker_repo}:latest"
+        
+        log "Pushing images..."
+        docker push "${docker_repo}:${version}"
+        docker push "${docker_repo}:latest"
+    fi
+    
+    log "Successfully built and pushed version $version"
+}
+
 update_dockerfile() {
     local version="$1"
     local sha256="$2"
@@ -267,76 +305,47 @@ update_dockerfile() {
     grep -E "HAPROXY_(BRANCH|MINOR|SHA256|SRC_URL)=" Dockerfile | sed 's/^/  /'
 }
 
-build_and_push() {
-    local version="$1"
-    local docker_repo="$2"
-    local build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    
-    version=$(echo "$version" | xargs)
-    docker_repo=$(echo "$docker_repo" | xargs)
-    
-    if [ -z "$version" ] || [ -z "$docker_repo" ]; then
-        log "Error: Version or Docker repository not specified"
-        exit 1
-    fi
-    
-    log "Building Docker image..."
-    docker build --progress=plain --platform linux/arm64 \
-        --build-arg BUILD_DATE="$build_date" \
-        -t "${docker_repo}:${version}" .
-    
-    log "Tagging latest..."
-    docker tag "${docker_repo}:${version}" "${docker_repo}:latest"
-    
-    log "Pushing images..."
-    docker push "${docker_repo}:${version}"
-    docker push "${docker_repo}:latest"
-    
-    log "Successfully built and pushed version $version"
-}
-
 main() {
     log "Starting build process..."
     
-    log "Reading current version from Dockerfile..."
-    CURRENT_VERSION=$(grep "HAPROXY_MINOR=" Dockerfile | cut -d'=' -f2- | tr -d '\\' | xargs)
-    CURRENT_BRANCH=$(grep "HAPROXY_BRANCH=" Dockerfile | cut -d'=' -f2- | tr -d '\\' | xargs)
+    local version=""
+    local docker_repo=""
+    local dev_mode=false
     
-    log "Current version in Dockerfile: '$CURRENT_VERSION'"
-    log "Current branch in Dockerfile: '$CURRENT_BRANCH'"
+    # Parse command line arguments
+    while getopts "v:r:dh" opt; do
+        case $opt in
+            v)
+                version="$OPTARG"
+                ;;
+            r)
+                docker_repo="$OPTARG"
+                ;;
+            d)
+                dev_mode=true
+                ;;
+            h)
+                usage
+                ;;
+            \?)
+                echo "Invalid option: -$OPTARG" >&2
+                usage
+                ;;
+        esac
+    done
     
-    if [ -z "$CURRENT_VERSION" ] || [ -z "$CURRENT_BRANCH" ]; then
-        log "Error: Could not detect current version or branch in Dockerfile"
-        exit 1
+    # If version not provided, detect it
+    if [ -z "$version" ]; then
+        version=$(get_latest_release)
+        log "Detected version: $version"
     fi
     
-    LATEST_VERSION=$(get_latest_release "$CURRENT_BRANCH")
-    log "Latest version available: $LATEST_VERSION"
-    
-    if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-        log "Already at latest HAProxy version $LATEST_VERSION"
-    else
-        log "New HAProxy version available: $LATEST_VERSION"
-        
-        # Always calculate new SHA256 when updating version
-        log "Getting SHA256 hash..."
-        SHA256=$(get_haproxy_sha256 "$LATEST_VERSION")
-        log "Got SHA256: $SHA256"
-        
-        log "Updating Dockerfile..."
-        update_dockerfile "$LATEST_VERSION" "$SHA256"
-        CURRENT_VERSION="$LATEST_VERSION"
+    # If docker repo not provided, use default
+    if [ -z "$docker_repo" ]; then
+        docker_repo="brycelarge/haproxy"
     fi
     
-    # Verify the download works with current SHA256
-    log "Verifying current version download..."
-    VERIFY_SHA256=$(get_haproxy_sha256 "$CURRENT_VERSION")
-    if [ "$VERIFY_SHA256" != "$(grep "HAPROXY_SHA256=" Dockerfile | cut -d'=' -f2- | tr -d '\\' | xargs)" ]; then
-        log "SHA256 mismatch for current version, updating..."
-        update_dockerfile "$CURRENT_VERSION" "$VERIFY_SHA256"
-    fi
-    
-    build_and_push "$CURRENT_VERSION" "brycelarge/haproxy"
+    build_and_push "$version" "$docker_repo" "$dev_mode"
 }
 
 main

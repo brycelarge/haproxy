@@ -1,8 +1,14 @@
-version: '3.8'
+name: haproxy
 
 services:
   haproxy:
     image: brycelarge/haproxy:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    platform: linux/amd64
     container_name: haproxy
     volumes:
       - ./config:/config
