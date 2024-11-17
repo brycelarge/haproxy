@@ -13,25 +13,10 @@ if [ ! -e /config/acme/tls1-params/ffdhe2048 ]; then
     chmod 644 /config/acme/tls1-params/ffdhe2048
 fi
 
-# Check if default.pem exists
-if [ ! -e /config/acme/certs/default.pem ]; then
-    echo "[haproxy] creating default ssl certificate..." | ts '%Y-%m-%d %H:%M:%S'
-
-    openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 \
-        -subj "/C=US/ST=somewhere/L=someplace/O=haproxy/OU=haproxy/CN=haproxy.selfsigned.invalid" && \
-        cat cert.pem key.pem > /config/acme/certs/default.pem
-
-    chown acme:acme /config/acme/certs/default.pem;
-
-    echo "[haproxy] default ssl certificate sucessfuly created" | ts '%Y-%m-%d %H:%M:%S'
-fi
-
-# Initialize or update ACME
 if [ ! -e /config/acme/acme.sh.env ]; then
     install_acme;
 fi
 
-# Register or verify ACME
 if [ ! -d /config/acme/ca ]; then
     register_acme
 else
