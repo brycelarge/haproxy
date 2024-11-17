@@ -249,16 +249,13 @@ build_and_push() {
         -t "${docker_repo}:${version}" .
     
     if [ "$dev_mode" = "true" ]; then
-        log "Tagging dev version..."
-        docker tag "${docker_repo}:${version}" "${docker_repo}:${version}-dev"
-        
-        log "Pushing dev image..."
-        docker push "${docker_repo}:${version}-dev"
+        log "Pushing dev version..."
+        docker push "${docker_repo}:${version}"
     else
         log "Tagging latest..."
         docker tag "${docker_repo}:${version}" "${docker_repo}:latest"
         
-        log "Pushing images..."
+        log "Pushing version and latest..."
         docker push "${docker_repo}:${version}"
         docker push "${docker_repo}:latest"
     fi
