@@ -23,9 +23,9 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
 ENV HAPROXY_BRANCH=3.1 \
-    HAPROXY_MINOR=3.1-dev11 \
-    HAPROXY_SHA256=fa03ee5355ca6168b8e74cb444ff8fa8362bce2fd11675da6c2776e64f1b3ebd \
-    HAPROXY_SRC_URL=http://www.haproxy.org/download \
+    HAPROXY_MINOR=3.1-dev13 \
+    HAPROXY_SHA256=237e7df2bd59c0efc0ba3305d58856d6f62843b7c47f7b38f675ecb24f3c92ad \
+    HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
     # Core functionality
@@ -55,6 +55,7 @@ ENV HAPROXY_BRANCH=3.1 \
     LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
     EXTRA_OBJS='
 COPY errors/ /etc/haproxy/errors/
+
 RUN \
     echo "**** Install haproxy build packages ****" && \
     apk add --no-cache \
@@ -72,16 +73,16 @@ RUN \
         /etc/haproxy \
         /etc/haproxy/errors \
         /etc/haproxy/certs \
+    chmod +x /usr/local/bin/*.sh && \
     echo "**** Install Haproxy ****" && \
-    curl -sfSL "${HAPROXY_SRC_URL}/${HAPROXY_BRANCH}/src/devel/haproxy-${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
+    curl -sfL "${HAPROXY_SRC_URL}/v${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
     echo "$HAPROXY_SHA256 *haproxy.tar.gz" | sha256sum -c - && \
-    mkdir -p /usr/src/haproxy && \
-    tar -xzf haproxy.tar.gz -C /usr/src/haproxy --strip-components=1 && \
+    mkdir -p /usr/src && \
+    tar -xzf haproxy.tar.gz -C /usr/src && \
+    mv /usr/src/haproxy-* /usr/src/haproxy && \
     rm haproxy.tar.gz && \
-    cp -R /usr/src/haproxy/examples/errorfiles /etc/haproxy/errors && \
     echo "**** Cleanup ****" && \
-    rm -rf \
-      /tmp/*
+    rm -rf /tmp/*
 
 RUN \
     echo "**** Compiling Haproxy from source ****" && \
@@ -130,7 +131,8 @@ RUN \
         libcap \
         tzdata && \
     echo "**** Make rsyslog diretory ****" && \
-    mkdir -p /var/spool/rsyslog \
+    mkdir -p \
+        /var/spool/rsyslog \
         /scripts && \
     echo "**** Create Haproxy user and make our folders ****" && \
     set -eux && \
@@ -167,12 +169,15 @@ RUN \
     echo "**** Add the tzdata package and configure for EST timezone ****" && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-ENV CONFIG_AUTO_GENERATE=false \
-    ACME_EMAIL=\
-    HA_DEBUG=false
+ENV CONFIG_DIR=/config \
+    CONFIG_AUTO_GENERATE=false \
+    DEV_MODE=false \
+    DEBUG=false
 
 COPY root/ /
 COPY scripts/ /scripts/
+VOLUME ["/config"]
+EXPOSE 80 443 8404
 
 # https://github.com/docker-library/haproxy/issues/200
 WORKDIR /var/lib/haproxy
