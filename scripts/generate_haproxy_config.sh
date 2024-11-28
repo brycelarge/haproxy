@@ -177,11 +177,10 @@ frontend https
     mode        tcp
     log         global
     option      dontlognull
-    no-option   dontlog-normal
     option      log-separate-errors
 
     # Strict TLS inspection with timeout
-    tcp-request inspect-delay 5s
+    tcp-request inspect-delay 10s
     tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
@@ -202,6 +201,9 @@ frontend https-offloading-ip-protection
     option          forwardfor
 
     http-request    set-var(txn.txnhost) hdr(host)
+
+    # Placed by yaml frontend https-offloading-ip-protection:
+    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
@@ -233,8 +235,6 @@ frontend https-offloading-ip-protection
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
-    # Placed by yaml frontend https-offloading-ip-protection:
-    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
 
 EOF
 
@@ -358,22 +358,22 @@ generate_https_frontend_config() {
     local config=""
     
     debug_log "Generating ACLs and use_backend rules for HTTPS frontend"
-    
-    # Generate individual ACLs for frontend-offloading
-    while read -r domain; do
-        config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
-"
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading") | .domains[]')
-    
+
     # Generate individual ACLs for frontend-offloading-ip-protection
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
     done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]')
+
+    # Generate individual ACLs for frontend-offloading
+    while read -r domain; do
+        config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
+"
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
     
     # Add use_backend rules
-    config="${config}    use_backend frontend-offloading if https-offloading
-    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+    config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+    use_backend frontend-offloading if https-offloading
 "
     
     if [ -n "$config" ]; then
@@ -548,37 +548,46 @@ generate_backend_configs() {
         timeout_server=${timeout_server:-50000}
         
         health_check=""
+        server_check=""
         retries="retries 3"
+
         cache=""
+        if echo "$backend" | jq -e '.cache == true' > /dev/null; then
+            cache="acl is_image path_end -i .jpg .jpeg .png .gif
+    http-request cache-use my-cache if is_image
+    http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
+"
+        fi
         
         if echo "$backend" | jq -e '.check' > /dev/null; then
-            check_type=$(echo "$backend" | jq -r '.check.type // "tcp"')
-            check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
-            check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
-            check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
-            cache="acl is_image path_end -i .jpg .jpeg .png .gif
-http-request cache-use my-cache if is_image
-http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
-"
-            
-            health_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
-            
-            case $check_type in
-                http)
-                    check_uri=$(echo "$backend" | jq -r '.check.uri // "/"')
-                    health_check="${health_check} httpchk GET ${check_uri}"
-                    ;;
-                ssl)
-                    check_verify=$(echo "$backend" | jq -r '.check.verify // "none"')
-                    health_check="${health_check} ssl verify ${check_verify}"
-                    ;;
-                tcp)
-                    # TCP check doesn't need additional parameters
-                    ;;
-                *)
-                    debug_log "Warning: Unknown check type '${check_type}' for backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
-                    ;;
-            esac
+            if echo "$backend" | jq -e '.check.disable == true' > /dev/null; then
+                health_check=""
+                server_check=""
+            else
+                check_type=$(echo "$backend" | jq -r '.check.type // "tcp"')
+                check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
+                check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
+                check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
+
+                server_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
+
+                case $check_type in
+                    http)
+                        check_uri=$(echo "$backend" | jq -r '.check.uri // "/"')
+                        health_check="${health_check} httpchk GET ${check_uri}"
+                        ;;
+                    ssl)
+                        check_verify=$(echo "$backend" | jq -r '.check.verify // "none"')
+                        health_check="${health_check} ssl verify ${check_verify}"
+                        ;;
+                    tcp)
+                        # TCP check doesn't need additional parameters
+                        ;;
+                    *)
+                        debug_log "Warning: Unknown check type '${check_type}' for backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
+                        ;;
+                esac
+            fi
         fi
 
         ssl_options=""
@@ -588,7 +597,8 @@ http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
                 ssl_options="${ssl_options} verify none"
             fi
         fi
-        server_line="server ${name}-srv ${server_address}${ssl_options:+ $ssl_options}"
+
+        server_line="server ${name}-srv ${server_address}${ssl_options:+ $ssl_options}${server_check:+ $server_check}"
 
         debug_log "Server line for backend $name: $server_line ${health_check}"
 
@@ -598,7 +608,8 @@ backend $name
     id $backend_id
     log global
     ${retries}
-    ${server_line} ${health_check}
+    ${health_check}
+    ${server_line}
     ${cache}
 EOF
 
