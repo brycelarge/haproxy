@@ -31,7 +31,7 @@ do
 done
 
 shift $((OPTIND - 1))
-OWNER=acme:acme
+OWNER=acme:haproxy
 IFS=: read -r USER GROUP <<< "${OWNER}"
 if [[ -z "${GROUP}" ]]; then
     printf '**** Permissions could not be set. Group is missing or incorrect, expecting user:group. ****\n'
@@ -41,3 +41,7 @@ fi
 ERROR='**** Permissions could not be set. This is probably because your volume mounts are remote or read-only. ****\n**** The app may not work properly and we will not provide support for it. ****\n'
 PATH=("/config")
 /usr/bin/find "${PATH[@]}" "${MAXDEPTH[@]}" ! -xtype l \( ! -group "${GROUP}" -o ! -user "${USER}" \) -exec chown "${OPTIONS[@]}" "${USER}":"${GROUP}" {} + || printf "${ERROR}"
+
+# Ensure /config has group write permissions
+/usr/bin/find "${PATH[@]}" "${MAXDEPTH[@]}" -type d -exec chmod 775 {} +
+/usr/bin/find "${PATH[@]}" "${MAXDEPTH[@]}" -type f -exec chmod 664 {} +

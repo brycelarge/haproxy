@@ -46,7 +46,7 @@ fi
 
 # Validate the configuration first
 debug_log "Validating configuration..."
-if ! haproxy -c -f /config/haproxy.cfg; then
+if ! s6-setuidgid haproxy haproxy -c -f /config/haproxy.cfg; then
     echo "[Haproxy] Error: Configuration validation failed" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
 fi
@@ -72,9 +72,8 @@ fi
 echo "[Haproxy] Initiating soft reload..." | ts '%Y-%m-%d %H:%M:%S'
 
 # Start new HAProxy process and pass the old PID for graceful shutdown
-if ! haproxy -f /config/haproxy.cfg -p "$PID_FILE" -sf "$OLD_PID"; then
-    EXIT_CODE=$?
-    echo "[Haproxy] Error: Failed to trigger reload (exit code: $EXIT_CODE)" | ts '%Y-%m-%d %H:%M:%S'
+if ! s6-setuidgid haproxy haproxy -f /config/haproxy.cfg -p "$PID_FILE" -sf "$OLD_PID"; then
+    echo "[Haproxy] Error: Failed to reload HAProxy" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
 fi
 

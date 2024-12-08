@@ -95,7 +95,7 @@ exec s6-setuidgid acme inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_writ
 
         # regenerate the cfg file
         echo "[acme] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
-        s6-setuidgid acme /scripts/generate_haproxy_config.sh
+        s6-setuidgid haproxy /scripts/generate_haproxy_config.sh
 
         # Ensure socket has proper permissions before reload
         if [ -S "/var/lib/haproxy/admin.sock" ]; then

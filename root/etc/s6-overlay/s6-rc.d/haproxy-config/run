@@ -5,8 +5,7 @@ chmod +x /scripts/generate_haproxy_config.sh;
 
 if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
     echo "[Haproxy] auto script generation running..." | ts '%Y-%m-%d %H:%M:%S'
-    /bin/sh /scripts/generate_haproxy_config.sh;
-    chown haproxy:haproxy /config/haproxy.cfg
+    s6-setuidgid haproxy /scripts/generate_haproxy_config.sh
     echo "[Haproxy] auto script generation complete" | ts '%Y-%m-%d %H:%M:%S'
 else
     echo "[Haproxy] auto script generation not enabled, skipping..." | ts '%Y-%m-%d %H:%M:%S'

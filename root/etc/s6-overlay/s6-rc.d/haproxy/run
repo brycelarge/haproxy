@@ -14,9 +14,9 @@ while [ ! -f "$file1" ] || [ ! -f "$file2" ]; do
 done
 
 if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
-    haproxy -vv
+    s6-setuidgid haproxy haproxy -vv
 else
-    haproxy -v
+    s6-setuidgid haproxy haproxy -v
 fi
 
 # Ensure the socket files exist and have the correct permissions
