@@ -6,11 +6,10 @@ HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 LOCK_FILE="/tmp/haproxy-generate.lock"
 
-# Ensure config file has proper permissions if it exists
-if [ -f "$HAPROXY_CFG" ]; then
-    chmod 660 "$HAPROXY_CFG"
-    chown haproxy:haproxy "$HAPROXY_CFG"
-fi
+# Create config file with proper permissions before writing
+touch "$HAPROXY_CFG"
+chown haproxy:haproxy "$HAPROXY_CFG"
+chmod 660 "$HAPROXY_CFG"
 
 # Ensure only one instance runs at a time
 if [ -f "$LOCK_FILE" ]; then

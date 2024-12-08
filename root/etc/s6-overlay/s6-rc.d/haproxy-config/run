@@ -1,8 +1,6 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
-chmod +x /scripts/generate_haproxy_config.sh;
-
 if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
     echo "[Haproxy] auto script generation running..." | ts '%Y-%m-%d %H:%M:%S'
     s6-setuidgid haproxy /scripts/generate_haproxy_config.sh
