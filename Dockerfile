@@ -23,8 +23,8 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
 ENV HAPROXY_BRANCH=3.1 \
-    HAPROXY_MINOR=3.1-dev13 \
-    HAPROXY_SHA256=237e7df2bd59c0efc0ba3305d58856d6f62843b7c47f7b38f675ecb24f3c92ad \
+    HAPROXY_MINOR=3.1.0 \
+    HAPROXY_SHA256=34fed7b6243d49642799cb0a29748565208a6b2cfc8c4a9ffaeb97d59813e455 \
     HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
@@ -54,7 +54,6 @@ ENV HAPROXY_BRANCH=3.1 \
     USE_PROMEX=1 \
     LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
     EXTRA_OBJS='
-COPY errors/ /etc/haproxy/errors/
 
 RUN \
     echo "**** Install haproxy build packages ****" && \
@@ -68,12 +67,6 @@ RUN \
         pcre2-dev \
         curl \
         zlib-dev && \
-    echo "**** Make haproxy directories ****" && \
-    mkdir -p \
-        /etc/haproxy \
-        /etc/haproxy/errors \
-        /etc/haproxy/certs \
-    chmod +x /usr/local/bin/*.sh && \
     echo "**** Install Haproxy ****" && \
     curl -sfL "${HAPROXY_SRC_URL}/v${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
     echo "$HAPROXY_SHA256 *haproxy.tar.gz" | sha256sum -c - && \
@@ -88,32 +81,34 @@ RUN \
     echo "**** Compiling Haproxy from source ****" && \
     cd /usr/src/haproxy && \
     set -eux && \
-	nproc="$(getconf _NPROCESSORS_ONLN)" && \
+    nproc="$(getconf _NPROCESSORS_ONLN)" && \
     PKG_CONFIG_PATH=/usr/lib/pkgconfig && \
     LD_LIBRARY_PATH="/usr/lib" && \
-	eval "make -C /usr/src/haproxy -j '$nproc' all $HAPROXY_MAKE_OPTS" && \
-	eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_OPTS" && \
+    eval "make -C /usr/src/haproxy -j '$nproc' all $HAPROXY_MAKE_OPTS" && \
+    eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_OPTS" && \
     echo "**** Setting up Haproxy folders and cleaning up ****" && \
     make -C /usr/src/haproxy TARGET=linux2628 install-bin install-man
 
 # start from fresh to remove all build layers and packages
 FROM brycelarge/alpine-baseimage:latest
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
-COPY --from=haproxy-builder /etc/haproxy /etc/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
+
+# Create HAProxy directories and copy error pages in final stage
+RUN mkdir -p /etc/haproxy/errors /etc/haproxy/certs
+COPY errors/ /etc/haproxy/errors/
 
 # Copy the custom scripts
 COPY ./conf.d/logrotate.d/haproxy /etc/logrotate.d/haproxy
-# Replace the file at 49-haproxy.conf that's pre-existing
 COPY ./conf.d/rsyslog.d/haproxy.conf /etc/rsyslog.d/49-haproxy.conf
 COPY ./conf.d/rsyslog.conf /etc/rsyslog.conf
-
-# Add in some performance tuning for high-volume network connections
-# For a great primer @see https://levelup.gitconnected.com/linux-kernel-tuning-for-high-performance-networking-high-volume-incoming-connections-196e863d458a
 COPY ./conf.d/network.conf /etc/sysctl.d/network.conf
-
-# Copy the healthcheck script
 COPY ./scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY scripts/ /scripts/
+
+# Set script permissions first
+RUN chmod +x /scripts/*.sh && \
+    chmod +x /usr/local/bin/healthcheck.sh
 
 # make haproxy's directories
 RUN \
@@ -136,24 +131,28 @@ RUN \
         /scripts && \
     echo "**** Create Haproxy user and make our folders ****" && \
     set -eux && \
-	addgroup --gid 99 --system haproxy && \
-	adduser \
-		--disabled-password \
-		--home /var/lib/haproxy \
-		--ingroup haproxy \
-		--no-create-home \
-		--system \
-		--uid 99 \
-		haproxy && \
+    addgroup --gid 99 --system haproxy && \
+    adduser \
+        --disabled-password \
+        --home /var/lib/haproxy \
+        --ingroup haproxy \
+        --no-create-home \
+        --system \
+        --uid 99 \
+        haproxy && \
     mkdir -p \
         /var/lib/haproxy \
         /var/run/haproxy \
-        /etc/haproxy/errors \
         /var/lib/haproxy/dev/ && \
     chmod 770 /usr/local/bin/healthcheck.sh && \
     chown haproxy:haproxy /var/lib/haproxy && \
     chown haproxy:haproxy /var/run/haproxy && \
     chown haproxy:haproxy /etc/haproxy && \
+    chmod 775 /var/lib/haproxy && \
+    chmod 775 /var/run/haproxy && \
+    chown -R haproxy:haproxy /scripts && \
+    chmod 775 /scripts && \
+    chmod 770 /var/lib/haproxy/dev && \
     setcap 'cap_net_bind_service=+ep' /usr/local/sbin/haproxy && \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \

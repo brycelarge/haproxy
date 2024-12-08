@@ -529,17 +529,23 @@ generate_backend_configs() {
         mode=$(echo "$backend" | jq -r '.mode')
         timeout_connect=$(echo "$backend" | jq -r '.timeout_connect')
         timeout_server=$(echo "$backend" | jq -r '.timeout_server')
-        server_address=$(echo "$backend" | jq -r '.server_address')
+        hosts=$(echo "$backend" | jq -r '.hosts[]')
         is_ssl=$(echo "$backend" | jq -r '.ssl // false')
         ssl_verify=$(echo "$backend" | jq -r '.ssl_verify // false')
+        enable_h2=$(echo "$backend" | jq -r '.enable_h2 // false')
         
         debug_log "Processing backend: $name"
         
         # Skip this backend if essential information is missing
         if [ "$name" = "null" ] || [ -z "$name" ] || 
-           [ "$mode" = "null" ] || [ -z "$mode" ] || 
-           [ "$server_address" = "null" ] || [ -z "$server_address" ]; then
-            debug_log "Warning: Skipping backend with missing essential information. Name: $name, Mode: $mode, Server Address: $server_address" | ts '%Y-%m-%d %H:%M:%S'
+           [ "$mode" = "null" ] || [ -z "$mode" ]; then
+            debug_log "Warning: Skipping backend with missing essential information. Name: $name, Mode: $mode" | ts '%Y-%m-%d %H:%M:%S'
+            continue
+        fi
+
+        # Get hosts array
+        if [ -z "$hosts" ] || [ "$hosts" = "null" ]; then
+            debug_log "Warning: No hosts defined for backend $name" | ts '%Y-%m-%d %H:%M:%S'
             continue
         fi
 
@@ -598,9 +604,22 @@ generate_backend_configs() {
             fi
         fi
 
-        server_line="server ${name}-srv ${server_address}${ssl_options:+ $ssl_options}${server_check:+ $server_check}"
+        # Generate server lines
+        server_lines=""
+        server_count=1
+        while read -r host; do
+            if [ -n "$host" ]; then
+                h2_options=""
+                if [ "$enable_h2" = "true" ]; then
+                    h2_options=" proto h2"
+                fi
+                server_lines="${server_lines}    server ${name}-srv${server_count} ${host}${ssl_options:+ $ssl_options}${h2_options}${server_check:+ $server_check}
+"
+                server_count=$((server_count + 1))
+            fi
+        done < <(echo "$hosts")
 
-        debug_log "Server line for backend $name: $server_line ${health_check}"
+        debug_log "Server lines for backend $name: $server_lines"
 
         cat <<EOF >> "$HAPROXY_CFG"
 backend $name
@@ -609,7 +628,7 @@ backend $name
     log global
     ${retries}
     ${health_check}
-    ${server_line}
+${server_lines}
     ${cache}
 EOF
 

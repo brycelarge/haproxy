@@ -4,6 +4,12 @@ SOCKET="/var/lib/haproxy/admin.sock"
 PID_FILE="/var/run/haproxy/haproxy.pid"
 TIMEOUT=30
 
+# Ensure socket has proper permissions
+if [ -S "$SOCKET" ]; then
+    chmod 660 "$SOCKET"
+    chown haproxy:haproxy "$SOCKET"
+fi
+
 # Function to check HAProxy status
 check_haproxy() {
     s6-setuidgid haproxy socat stdio "unix-connect:$SOCKET" <<< "show info" > /dev/null 2>&1

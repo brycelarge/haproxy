@@ -6,6 +6,9 @@ INCLUDE_DEV=false
 GITHUB_API="https://api.github.com"
 GITHUB_REPO="haproxy/haproxy"
 
+# Enable debug logging
+export HA_DEBUG=true
+
 # Parse command line arguments
 while getopts "d" opt; do
     case $opt in
@@ -320,6 +323,7 @@ main() {
                 ;;
             d)
                 dev_mode=true
+                INCLUDE_DEV=true
                 ;;
             h)
                 usage
@@ -336,6 +340,19 @@ main() {
         version=$(get_latest_release)
         log "Detected version: $version"
     fi
+    
+    # Get the SHA256 hash for this version
+    log "Getting SHA256 for version $version..."
+    local sha256=$(get_haproxy_sha256 "$version")
+    if [ -z "$sha256" ]; then
+        log "Error: Could not get SHA256 hash for version $version"
+        exit 1
+    fi
+    log "Got SHA256: $sha256"
+    
+    # Update the Dockerfile with new version and hash
+    log "Updating Dockerfile..."
+    update_dockerfile "$version" "$sha256"
     
     # If docker repo not provided, use default
     if [ -z "$docker_repo" ]; then
