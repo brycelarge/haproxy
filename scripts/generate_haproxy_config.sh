@@ -6,12 +6,15 @@ HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 LOCK_FILE="/tmp/haproxy-generate.lock"
 
-# Create config file if it doesn't exist, otherwise clear its contents
+# Create config file if it doesn't exist
 if [ ! -f "$HAPROXY_CFG" ]; then
+    echo "[haproxy] file does not exist" | ts '%Y-%m-%d %H:%M:%S'
     touch "$HAPROXY_CFG"
-else
-    : > "$HAPROXY_CFG"  # Clear the file contents
 fi
+
+# Always clear the file contents before generating new config
+echo "[haproxy] clearing existing config" | ts '%Y-%m-%d %H:%M:%S'
+truncate -s 0 "$HAPROXY_CFG"
 
 # Ensure only one instance runs at a time
 if [ -f "$LOCK_FILE" ]; then
