@@ -4,6 +4,37 @@
 YAML_FILE=/config/haproxy.yaml
 HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
+LOCK_FILE="/tmp/haproxy-generate.lock"
+
+# Ensure config file has proper permissions if it exists
+if [ -f "$HAPROXY_CFG" ]; then
+    chmod 660 "$HAPROXY_CFG"
+    chown haproxy:haproxy "$HAPROXY_CFG"
+fi
+
+# Ensure only one instance runs at a time
+if [ -f "$LOCK_FILE" ]; then
+    pid=$(cat "$LOCK_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "[haproxy] Another config generation process is running (PID: $pid)" | ts '%Y-%m-%d %H:%M:%S'
+        exit 1
+    else
+        echo "[haproxy] Removing stale lock file" | ts '%Y-%m-%d %H:%M:%S'
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Create lock file with current PID
+echo $$ > "$LOCK_FILE"
+
+# Verify we got the lock
+if [ "$(cat "$LOCK_FILE")" != "$$" ]; then
+    echo "[haproxy] Failed to acquire lock" | ts '%Y-%m-%d %H:%M:%S'
+    exit 1
+fi
+
+# Cleanup lock file on exit
+trap 'rm -f "$LOCK_FILE"' EXIT
 
 while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
     echo "[haproxy] Waiting for $ACME_THUMBPRINT_PATH to be created before creating configuration..." | ts '%Y-%m-%d %H:%M:%S'
@@ -16,8 +47,8 @@ THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
 : "${H3_29_SUPPORT:=true}"
 : "${MIXED_SSL_MODE:=false}"
 
-[ -e "$HAPROXY_CFG" ] && rm "$HAPROXY_CFG"
-touch "$HAPROXY_CFG"
+# Clear the config file by writing empty content
+echo "" > "$HAPROXY_CFG"
 
 if [ -z "${HAPROXY_BIND_IP}" ]; then
     HAPROXY_BIND_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
