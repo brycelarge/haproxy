@@ -14,6 +14,7 @@ THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
 : "${HAPROXY_THREADS:=4}"
 : "${QUIC_MAX_AGE:=86400}"
 : "${H3_29_SUPPORT:=true}"
+: "${MIXED_SSL_MODE:=false}"
 
 [ -e "$HAPROXY_CFG" ] && rm "$HAPROXY_CFG"
 touch "$HAPROXY_CFG"
