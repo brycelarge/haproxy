@@ -93,6 +93,9 @@ exec inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_write,moved_to | while
         mapfile -t domains < <(extract_domains)
         check_for_missing_domain_certs
 
+        # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
+        chmod 644 "/config/haproxy.cfg"
+
         # regenerate the cfg file and reload haproxy
         echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
         if s6-setuidgid haproxy /scripts/generate_haproxy_config.sh && s6-setuidgid haproxy /scripts/reload-haproxy.sh; then
