@@ -1,7 +1,7 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
-YAML_FILE=/config/haproxy.yaml
+YAML_FILE="/config/haproxy.yaml"
 HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 LOCK_FILE="/tmp/haproxy-generate.lock"
