@@ -86,7 +86,6 @@ RUN \
     LD_LIBRARY_PATH="/usr/lib" && \
     eval "make -C /usr/src/haproxy -j '$nproc' all $HAPROXY_MAKE_OPTS" && \
     eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_OPTS" && \
-    echo "**** Setting up Haproxy folders and cleaning up ****" && \
     make -C /usr/src/haproxy TARGET=linux2628 install-bin install-man
 
 # start from fresh to remove all build layers and packages
@@ -106,11 +105,6 @@ COPY ./conf.d/network.conf /etc/sysctl.d/network.conf
 COPY ./scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
 COPY scripts/ /scripts/
 
-# Set script permissions first
-RUN chmod +x /scripts/*.sh && \
-    chmod +x /usr/local/bin/healthcheck.sh
-
-# make haproxy's directories
 RUN \
     echo "**** Install runtime packages ****" && \
     apk add --no-cache \
@@ -150,20 +144,21 @@ RUN \
     chown haproxy:haproxy /etc/haproxy && \
     chmod 775 /var/lib/haproxy && \
     chmod 775 /var/run/haproxy && \
-    chown -R haproxy:haproxy /scripts && \
     chmod 775 /scripts && \
+    chmod +x /scripts/*.sh && \
+    chown -R haproxy:haproxy /scripts && \
     chmod 770 /var/lib/haproxy/dev && \
     setcap 'cap_net_bind_service=+ep' /usr/local/sbin/haproxy && \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \
     adduser \
-            --disabled-password \
-            --home /config/acme \
-            --ingroup acme \
-            --no-create-home \
-            --system \
-            --uid 1000 \
-            acme && \
+        --disabled-password \
+        --home /config/acme \
+        --ingroup acme \
+        --no-create-home \
+        --system \
+        --uid 1000 \
+        acme && \
     adduser acme haproxy && \
     echo "**** Add the tzdata package and configure for EST timezone ****" && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -175,6 +170,11 @@ ENV CONFIG_DIR=/config \
 
 COPY root/ /
 COPY scripts/ /scripts/
+
+RUN chmod +x /scripts/*.sh && \
+    chown -R haproxy:haproxy /scripts && \
+    chmod 775 /scripts
+
 VOLUME ["/config"]
 EXPOSE 80 443 8404
 

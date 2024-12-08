@@ -53,9 +53,8 @@ global
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
 
-    pidfile /var/run/haproxy/haproxy.pid
-
     # [GLOBALS PLACEHOLDER]
+    pidfile /var/run/haproxy/haproxy.pid
 
     # rsyslogd has created a socket to listen on at /var/lib/haproxy/dev/log
     # haproxy is chrooted to /var/lib/haproxy/ and can only write therein
@@ -611,7 +610,11 @@ generate_backend_configs() {
             if [ -n "$host" ]; then
                 h2_options=""
                 if [ "$enable_h2" = "true" ]; then
-                    h2_options=" proto h2"
+                    if [ "$is_ssl" = "true" ]; then
+                        h2_options=" alpn h2"
+                    else
+                        h2_options=" alpn h2"
+                    fi
                 fi
                 server_lines="${server_lines}    server ${name}-srv${server_count} ${host}${ssl_options:+ $ssl_options}${h2_options}${server_check:+ $server_check}
 "
@@ -623,11 +626,12 @@ generate_backend_configs() {
 
         cat <<EOF >> "$HAPROXY_CFG"
 backend $name
-    mode $mode
+    mode http
     id $backend_id
     log global
     ${retries}
     ${health_check}
+    $([ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings")
 ${server_lines}
     ${cache}
 EOF
