@@ -6,6 +6,8 @@ HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 LOCK_FILE="/tmp/haproxy-generate.lock"
 
+source /scripts/debug.sh
+
 # Create config file if it doesn't exist
 if [ ! -f "$HAPROXY_CFG" ]; then
     echo "[haproxy] file does not exist" | ts '%Y-%m-%d %H:%M:%S'
@@ -13,8 +15,10 @@ if [ ! -f "$HAPROXY_CFG" ]; then
 fi
 
 # Always clear the file contents before generating new config
-echo "[haproxy] clearing existing config" | ts '%Y-%m-%d %H:%M:%S'
-truncate -s 0 "$HAPROXY_CFG"
+echo "[haproxy] clearing existing config..." | ts '%Y-%m-%d %H:%M:%S'
+debug_log "file size before clear: $(wc -c < "$HAPROXY_CFG")" | ts '%Y-%m-%d %H:%M:%S'
+cat /dev/null > "$HAPROXY_CFG"
+debug_log "file size after clear: $(wc -c < "$HAPROXY_CFG")" | ts '%Y-%m-%d %H:%M:%S'
 
 # Ensure only one instance runs at a time
 if [ -f "$LOCK_FILE" ]; then
@@ -58,8 +62,6 @@ if [ -z "${HAPROXY_BIND_IP}" ]; then
     fi
 fi
 
-source /scripts/debug.sh
-
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
 if [ "$H3_29_SUPPORT" = "true" ]; then
@@ -86,8 +88,10 @@ global
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
 
-    # [GLOBALS PLACEHOLDER]
+    # Core HAProxy settings
     pidfile /var/run/haproxy/haproxy.pid
+
+    # [GLOBALS PLACEHOLDER]
 
     # rsyslogd has created a socket to listen on at /var/lib/haproxy/dev/log
     # haproxy is chrooted to /var/lib/haproxy/ and can only write therein

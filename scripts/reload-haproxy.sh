@@ -71,8 +71,8 @@ fi
 # Perform soft reload
 echo "[Haproxy] Initiating soft reload..." | ts '%Y-%m-%d %H:%M:%S'
 
-# Start new HAProxy process and pass the old PID for graceful shutdown
-if ! haproxy -f /config/haproxy.cfg -p "$PID_FILE" -sf "$OLD_PID"; then
+# Start new HAProxy process in background
+if ! haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
     echo "[Haproxy] Error: Failed to reload HAProxy" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
 fi
