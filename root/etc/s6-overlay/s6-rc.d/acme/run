@@ -85,7 +85,7 @@ check_for_missing_domain_certs
 echo "[Haproxy] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
 
 # Watch the directory instead of the file and use a more robust watching mechanism
-exec inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_write,moved_to | while read -r directory events filename; do
+exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_write,moved_to | while read -r directory events filename; do
     if [ "$filename" = "$(basename "$HAPROXY_YAML")" ]; then
         echo "[Haproxy] detected changes to ${filename}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
 
@@ -98,7 +98,7 @@ exec inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_write,moved_to | while
 
         # regenerate the cfg file and reload haproxy
         echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
-        if s6-setuidgid haproxy /scripts/generate_haproxy_config.sh && s6-setuidgid haproxy /scripts/reload-haproxy.sh; then
+        if /scripts/generate_haproxy_config.sh && /scripts/reload-haproxy.sh; then
             echo "[Haproxy] reloading successful" | ts '%Y-%m-%d %H:%M:%S'
         else
             EXIT_CODE=$?
