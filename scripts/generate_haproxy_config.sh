@@ -6,10 +6,12 @@ HAPROXY_CFG="/config/haproxy.cfg"
 ACME_THUMBPRINT_PATH="/config/acme/ca/thumbprint"
 LOCK_FILE="/tmp/haproxy-generate.lock"
 
-# Create config file with proper permissions before writing
-touch "$HAPROXY_CFG"
-chown haproxy:haproxy "$HAPROXY_CFG"
-chmod 660 "$HAPROXY_CFG"
+# Create config file if it doesn't exist, otherwise clear its contents
+if [ ! -f "$HAPROXY_CFG" ]; then
+    touch "$HAPROXY_CFG"
+else
+    : > "$HAPROXY_CFG"  # Clear the file contents
+fi
 
 # Ensure only one instance runs at a time
 if [ -f "$LOCK_FILE" ]; then
@@ -45,9 +47,6 @@ THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
 : "${QUIC_MAX_AGE:=86400}"
 : "${H3_29_SUPPORT:=true}"
 : "${MIXED_SSL_MODE:=false}"
-
-# Clear the config file by writing empty content
-echo "" > "$HAPROXY_CFG"
 
 if [ -z "${HAPROXY_BIND_IP}" ]; then
     HAPROXY_BIND_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
