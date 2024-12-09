@@ -21,4 +21,4 @@ done
 echo "[acme] waiting for 15 seconds before starting to parse and issue certificates..." | ts '%Y-%m-%d %H:%M:%S'
 sleep 15; # make sure haproxy is up and stable
 
-check_for_missing_domain_certs "no"
+check_for_missing_domain_certs
