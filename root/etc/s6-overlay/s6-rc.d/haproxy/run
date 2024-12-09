@@ -54,7 +54,7 @@ exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_w
 
         # Re-read domains as they might have changed but do not reload haproxy
         mapfile -t domains < <(extract_domains)
-        check_for_missing_domain_certs "no"
+        check_for_missing_domain_certs "no";
 
         if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
             # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
