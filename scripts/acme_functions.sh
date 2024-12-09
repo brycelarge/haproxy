@@ -11,6 +11,7 @@ HOME_DIR="/config/acme"
 CERT_HOME="/config/acme/certs"
 CRON_FILE="/etc/crontabs/${USER}"
 LOG_FILE="/var/log/acme-renewals.log"
+HAPROXY_YAML="/config/haproxy.yaml"
 
 # New variable to determine the challenge type
 ACME_CHALLENGE_TYPE="${ACME_CHALLENGE_TYPE:-dns_cf}"
@@ -192,6 +193,60 @@ renew_cert() {
 
     release_lock;
     deploy_cert "${1}";
+}
+
+# Function to extract domains from the YAML file
+extract_domains() {
+    yq e '.domain_mappings[].domain' "$HAPROXY_YAML" | sort | uniq
+}
+
+function check_for_missing_domain_certs() {
+    # Create an array of domains
+    mapfile -t domains < <(extract_domains)
+
+    # Print the number of domains found
+    echo "[acme] Found ${#domains[@]} domains in your haproxy.yaml file, going through them to see if we need to issue or renew..." | ts '%Y-%m-%d %H:%M:%S'
+
+    FAILED_DOMAINS=()
+
+    # Loop through the domains and process them
+    for domain in "${domains[@]}"; do
+        debug_log "Processing domain: $domain" | ts '%Y-%m-%d %H:%M:%S'
+        {
+            if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
+                debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
+                
+                # Check expiration
+                expiration=$(openssl x509 -enddate -noout -in "${HAPROXY_CERTS_DIR}/${domain}.pem" | cut -d= -f2)
+                debug_log "$domain Certificate expires on: $expiration" | ts '%Y-%m-%d %H:%M:%S'
+                
+                # Add logic to renew if close to expiration
+                if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
+                    echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
+                    renew_cert "$domain"
+                fi
+            else
+                # Check if certificate exists in ACME directory
+                if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
+                    echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
+                    deploy_cert "$domain"
+                else
+                    echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                    issue_cert "$domain"
+                fi
+            fi
+        } || {
+            echo "[acme] Failed to process ${domain}, moving to next domain..." | ts '%Y-%m-%d %H:%M:%S'
+            FAILED_DOMAINS+=("$domain")
+            continue
+        }
+    done
+
+    # Report any failed domains
+    if [ ${#FAILED_DOMAINS[@]} -gt 0 ]; then
+        echo "[acme] The following domains failed processing:" | ts '%Y-%m-%d %H:%M:%S'
+        printf '%s\n' "${FAILED_DOMAINS[@]}" | ts '%Y-%m-%d %H:%M:%S'
+    fi
 }
 
 verify_cron() {

@@ -6,6 +6,7 @@ file2="/config/acme/tls1-params/ffdhe2048"
 HAPROXY_YAML="/config/haproxy.yaml"
 
 source /scripts/debug.sh;
+source /scripts/acme_functions.sh # issue_cert and deploy_cert functions
 
 # Loop until both files exist
 while [ ! -f "$file1" ] || [ ! -f "$file2" ]; do
@@ -30,14 +31,45 @@ done
 
 # Start HAProxy if it's not already running
 if ! pgrep -x "haproxy" > /dev/null; then
-    echo "[Haproxy] started!" | ts '%Y-%m-%d %H:%M:%S'
-
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         s6-setuidgid haproxy haproxy -f -d /config/haproxy.cfg
     else
         s6-setuidgid haproxy haproxy -f /config/haproxy.cfg
     fi
+
+    echo "[Haproxy] started!" | ts '%Y-%m-%d %H:%M:%S'
 else
     echo "[Haproxy] is already running." | ts '%Y-%m-%d %H:%M:%S'
-    exit 0
 fi
+
+sleep 10
+
+# Watch for changes in the haproxy configuration file
+echo "[Haproxy] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
+
+# Watch the directory instead of the file and use a more robust watching mechanism
+exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_write,moved_to | while read -r directory events filename; do
+    if [ "$filename" = "$(basename "$HAPROXY_YAML")" ]; then
+        echo "[Haproxy] detected changes to ${filename}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
+
+        # Re-read domains as they might have changed
+        mapfile -t domains < <(extract_domains)
+        check_for_missing_domain_certs
+
+        if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
+            # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
+            chmod 644 "/config/haproxy.cfg"
+
+            # regenerate the cfg file and reload haproxy
+            echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
+            if /scripts/generate_haproxy_config.sh && /scripts/reload-haproxy.sh; then
+                echo "[Haproxy] reloading successful" | ts '%Y-%m-%d %H:%M:%S'
+            else
+                EXIT_CODE=$?
+                echo "[Haproxy] reload failed with exit code ${EXIT_CODE}" | ts '%Y-%m-%d %H:%M:%S'
+            fi
+        else
+            echo "[Haproxy] auto script generation not enabled, skipping..." | ts '%Y-%m-%d %H:%M:%S'
+        fi
+    fi
+done
