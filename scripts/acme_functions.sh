@@ -121,10 +121,10 @@ issue_cert() {
     fi
 
     trap cleanup EXIT
+    local hot_update=${2:-"yes"}
+    source /config/acme/acme.sh.env;
 
     echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
-
-    source /config/acme/acme.sh.env;
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
@@ -135,7 +135,10 @@ issue_cert() {
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \
-            -d "${1}";
+            -d "${1}" || {
+                release_lock;
+                return 1;
+            };
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
@@ -145,13 +148,20 @@ issue_cert() {
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \
-            -d "${1}";
+            -d "${1}" || {
+                release_lock;
+                return 1;
+            };
     fi
 
     release_lock;
+
+    # If certificate was issued successfully deploy it
+    deploy_cert "${1}" "${hot_update}"
 }
 
 deploy_cert() {
+    local hot_update=${2:-"yes"}
     echo "[acme] Deploying ssl certificate for: ${1}" | ts '%Y-%m-%d %H:%M:%S';
 
     {
@@ -159,7 +169,7 @@ deploy_cert() {
         cd $HOME_DIR;
 
         source "$HOME_DIR/acme.sh.env";
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --home $HOME_DIR \
             --config-home $HOME_DIR \
             --cert-home $CERT_HOME \
@@ -182,6 +192,7 @@ renew_cert() {
     fi
 
     trap cleanup EXIT
+    local hot_update=${2:-"yes"}
 
     source "$HOME_DIR/acme.sh.env";
     s6-setuidgid ${USER} /config/acme/acme.sh \
@@ -192,7 +203,7 @@ renew_cert() {
         --renew -d "${1}"
 
     release_lock;
-    deploy_cert "${1}";
+    deploy_cert "${1}" "${hot_update}";
 }
 
 # Function to extract domains from the YAML file
@@ -201,6 +212,9 @@ extract_domains() {
 }
 
 function check_for_missing_domain_certs() {
+    # Should we reload haproxy
+    local hot_update=${1:-"yes"}
+
     # Create an array of domains
     mapfile -t domains < <(extract_domains)
 
@@ -223,16 +237,16 @@ function check_for_missing_domain_certs() {
                 # Add logic to renew if close to expiration
                 if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
                     echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
-                    renew_cert "$domain"
+                    renew_cert "$domain" "$hot_update"
                 fi
             else
                 # Check if certificate exists in ACME directory
                 if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
                     echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
-                    deploy_cert "$domain"
+                    deploy_cert "$domain" "$hot_update"
                 else
                     echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
-                    issue_cert "$domain"
+                    issue_cert "$domain" "$hot_update"
                 fi
             fi
         } || {
