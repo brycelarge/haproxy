@@ -81,6 +81,7 @@ function check_for_missing_domain_certs() {
 
 check_for_missing_domain_certs
 
+
 # Watch for changes in the haproxy configuration file
 echo "[Haproxy] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'
 
@@ -93,16 +94,20 @@ exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_w
         mapfile -t domains < <(extract_domains)
         check_for_missing_domain_certs
 
-        # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
-        chmod 644 "/config/haproxy.cfg"
+        if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
+            # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
+            chmod 644 "/config/haproxy.cfg"
 
-        # regenerate the cfg file and reload haproxy
-        echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
-        if /scripts/generate_haproxy_config.sh && /scripts/reload-haproxy.sh; then
-            echo "[Haproxy] reloading successful" | ts '%Y-%m-%d %H:%M:%S'
+            # regenerate the cfg file and reload haproxy
+            echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
+            if /scripts/generate_haproxy_config.sh && /scripts/reload-haproxy.sh; then
+                echo "[Haproxy] reloading successful" | ts '%Y-%m-%d %H:%M:%S'
+            else
+                EXIT_CODE=$?
+                echo "[Haproxy] reload failed with exit code ${EXIT_CODE}" | ts '%Y-%m-%d %H:%M:%S'
+            fi
         else
-            EXIT_CODE=$?
-            echo "[Haproxy] reload failed with exit code ${EXIT_CODE}" | ts '%Y-%m-%d %H:%M:%S'
+            echo "[Haproxy] auto script generation not enabled, skipping..." | ts '%Y-%m-%d %H:%M:%S'
         fi
     fi
 done
