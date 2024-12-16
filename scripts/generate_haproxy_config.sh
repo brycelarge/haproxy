@@ -191,15 +191,17 @@ frontend http
     mode        http
     log	        global
 
-    # ACME challenge
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
-
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } # For Proto
     option forwardfor # X-forwarded-for
+
+    # ACME challenge - must be before redirect
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
+
+    # Redirect all other traffic to HTTPS
     http-request redirect scheme https
 
     http-response set-header alt-svc "${ALT_SVC}"
