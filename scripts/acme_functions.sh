@@ -51,7 +51,7 @@ install_acme() {
         --config-home "${HOME_DIR}" \
         --cert-home "${CERT_HOME}" \
         --accountemail "${ACME_EMAIL}";
-    
+
     cd /config;
     rm -rf acme.sh-master;
 
@@ -68,7 +68,7 @@ install_acme() {
 
     # Create environment file
     echo "[acme] Setting up acme environment variables..." | ts '%Y-%m-%d %H:%M:%S'
-    
+
     # Create environment file
     s6-setuidgid "${USER}" cat <<EOF > "${HOME_DIR}/acme.sh.env"
 export DEPLOY_HAPROXY_HOT_UPDATE=yes
@@ -106,7 +106,7 @@ register_acme() {
         --config-home "${HOME_DIR}" \
         --cert-home "${CERT_HOME}" \
         --debug > /tmp/acme_reg.log 2>&1
-        
+
     # Extract and save thumbprint
     THUMBPRINT=$(grep "ACCOUNT_THUMBPRINT" /tmp/acme_reg.log | cut -d"'" -f2)
     echo "[acme] account THUMBPRINT: ${THUMBPRINT}" | ts '%Y-%m-%d %H:%M:%S';
@@ -229,13 +229,17 @@ function check_for_missing_domain_certs() {
         {
             if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
                 debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
-                
+
                 # Check expiration
                 expiration=$(openssl x509 -enddate -noout -in "${HAPROXY_CERTS_DIR}/${domain}.pem" | cut -d= -f2)
                 debug_log "$domain Certificate expires on: $expiration" | ts '%Y-%m-%d %H:%M:%S'
-                
+
+                # Convert expiration date to seconds since epoch using /bin/date
+                expiration_seconds=$(date -d "$expiration" +%s 2>/dev/null || date -D "%b %d %H:%M:%S %Y %Z" -d "$expiration" +%s)
+                thirty_days_from_now=$(date -d "+30 days" +%s 2>/dev/null || date -d "$(date +%Y-%m-%d) +30 days" +%s)
+
                 # Add logic to renew if close to expiration
-                if [[ $(date -d "$expiration" +%s) -lt $(date -d "+30 days" +%s) ]]; then
+                if [ "$expiration_seconds" -lt "$thirty_days_from_now" ]; then
                     echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
                     renew_cert "$domain" "$hot_update"
                 fi
@@ -373,4 +377,3 @@ EOF
         cat "$CRON_FILE"
     fi
 }
-
