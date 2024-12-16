@@ -85,6 +85,10 @@ export CERT_HOME=/config/acme/certs
 export DEBUG=\${DEBUG:-1}
 export LOG_LEVEL=\${LOG_LEVEL:-2}
 
+# ACME server settings
+export ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory
+export DEFAULT_ACME_SERVER=\${ACME_SERVER}
+
 # Verification method (http is default, can be overridden)
 export ACME_VERIFY_METHOD=\${ACME_VERIFY_METHOD:-http}
 
@@ -111,7 +115,6 @@ register_acme() {
     s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
         --register-account \
         --accountemail "${ACME_EMAIL}" \
-        --server letsencrypt \
         --stateless \
         --home "${HOME_DIR}" \
         --config-home "${HOME_DIR}" \

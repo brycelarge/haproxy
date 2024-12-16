@@ -48,7 +48,14 @@ while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
     echo "[haproxy] Waiting for $ACME_THUMBPRINT_PATH to be created before creating configuration..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 3
 done
-THUMBPRINT=$(cat "${ACME_THUMBPRINT_PATH}")
+
+# Read the thumbprint from the file
+if [ -f /config/acme/ca/thumbprint ]; then
+    ACCOUNT_THUMBPRINT=$(cat /config/acme/ca/thumbprint)
+else
+    echo "Error: ACME account thumbprint not found"
+    exit 1
+fi
 
 : "${HAPROXY_THREADS:=4}"
 : "${QUIC_MAX_AGE:=86400}"
@@ -81,7 +88,7 @@ global
     cpu-map auto:1/1-${HAPROXY_THREADS} 0-$((HAPROXY_THREADS-1))
 
     # acme thumbprnt
-    setenv ACCOUNT_THUMBPRINT '${THUMBPRINT}'
+    setenv ACCOUNT_THUMBPRINT '${ACCOUNT_THUMBPRINT}'
 
     # Default socket configurations
     # used for newer reload mechanism. See https://www.haproxy.com/blog/hitless-reloads-with-haproxy-howto/
@@ -191,18 +198,19 @@ frontend http
     mode        http
     log	        global
 
-    # Placed by yaml frontend http:
-    # [HTTP-FRONTEND PLACEHOLDER]
+    # ACME challenge must be first, before any redirects
+    acl is_acme_challenge path_beg /.well-known/acme-challenge/
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
+
+    # All other requests get redirected to HTTPS
+    http-request redirect scheme https unless is_acme_challenge
 
     # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc } # For Proto
-    option forwardfor # X-forwarded-for
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    option forwardfor
 
-    # ACME challenge - must be before redirect
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
-
-    # Redirect all other traffic to HTTPS
-    http-request redirect scheme https
+    # Placed by yaml frontend http:
+    # [HTTP-FRONTEND PLACEHOLDER]
 
     http-response set-header alt-svc "${ALT_SVC}"
 
