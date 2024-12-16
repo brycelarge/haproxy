@@ -254,7 +254,7 @@ frontend https-offloading-ip-protection
     http-response set-header X-XSS-Protection "1; mode=block"
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
-    
+
     http-response set-header alt-svc "${ALT_SVC}"
 
     # Compression controls
@@ -304,7 +304,7 @@ frontend https-offloading
     http-response set-header Referrer-Policy no-referrer-when-downgrade
 
     http-response set-header alt-svc "${ALT_SVC}"
-    
+
     # Compression controls
     acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
     acl has_content_encoding hdr(Content-Encoding) -m found
@@ -357,7 +357,7 @@ replace_placeholder() {
     local placeholder="$1"
     local yaml_path="$2"
     local indent="$3"
-    
+
     # Check if the YAML path exists and is not empty
     if yq eval "$yaml_path" "$YAML_FILE" | grep -q -v '^$'; then
         local content
@@ -392,7 +392,7 @@ fi
 # Function to generate HTTPS frontend configuration
 generate_https_frontend_config() {
     local config=""
-    
+
     debug_log "Generating ACLs and use_backend rules for HTTPS frontend"
 
     # Generate individual ACLs for frontend-offloading-ip-protection
@@ -406,12 +406,12 @@ generate_https_frontend_config() {
         config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
 "
     done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
-    
+
     # Add use_backend rules
     config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
     use_backend frontend-offloading if https-offloading
 "
-    
+
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
         sed -i "/# \[HTTPS-FRONTEND USE_BACKEND PLACEHOLDER\]/r /dev/stdin" "$HAPROXY_CFG" << EOF
@@ -445,16 +445,16 @@ generate_https_offloading_frontend_config() {
     local acl_config=""
     local backend_config=""
     local seen_certs=""
-    
+
     debug_log "Generating configuration for https-offloading"
-    
+
     # First pass: Generate all unique certificate ACLs
     while read -r domain backend; do
         if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
             # Get base domain
             base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
             cert_acl_name="aclcrt_${base_domain}_https_offloading"
-            
+
             # Only add cert ACL if we haven't seen it before
             if ! echo "$seen_certs" | grep -F "$cert_acl_name" > /dev/null; then
                 seen_certs="${seen_certs}${cert_acl_name}
@@ -465,22 +465,22 @@ generate_https_offloading_frontend_config() {
                 acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "true")
 "
             fi
-            
+
             # Create domain-specific ACL using the original domain
             domain_clean=${domain//[.-]/_}
             acl_config="${acl_config}    acl acl_${domain_clean} var(txn.txnhost) -m str -i ${domain}
 "
-            
+
             # Store backend rule using both ACLs
             backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name}
 "
         fi
     done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
-    
+
     # Combine configs with proper line breaks
     local config="${acl_config}
 ${backend_config}"
-    
+
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
         sed -i "/# \[HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER\]/r /dev/stdin" "$HAPROXY_CFG" << EOF
@@ -496,9 +496,9 @@ generate_https_offloading_ip_protection_frontend_config() {
     local backend_config=""
     local seen_certs=""
     local base_domain=""
-    
+
     debug_log "Generating configuration for https-offloading-ip-protection frontend"
-    
+
     # First determine the base domain from the first domain
     while read -r domain backend; do
         if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
@@ -506,14 +506,14 @@ generate_https_offloading_ip_protection_frontend_config() {
             break
         fi
     done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
-    
+
     if [ -z "$base_domain" ]; then
         debug_log "Error: Could not determine base domain for IP protection frontend"
         return 1
     fi
-    
+
     debug_log "Using base domain: $base_domain for IP protection frontend"
-    
+
     # Generate ACLs using the determined base domain
     while read -r domain backend; do
         if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
@@ -530,21 +530,21 @@ generate_https_offloading_ip_protection_frontend_config() {
                 acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "true")
 "
             fi
-            
+
             # Create domain ACL using the original domain
             acl_config="${acl_config}    acl ${domain} var(txn.txnhost) -m str -i ${domain}
 "
-            
+
             # Store backend rule using both ACLs
             backend_config="${backend_config}    use_backend ${backend} if ${domain} ${cert_acl_name}
 "
         fi
     done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | "\(.domain) \(.backend)"')
-    
+
     # Combine configs with proper line breaks
     local config="${acl_config}
 ${backend_config}"
-    
+
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
         sed -i "/# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER\]/r /dev/stdin" "$HAPROXY_CFG" << EOF
@@ -569,11 +569,11 @@ generate_backend_configs() {
         is_ssl=$(echo "$backend" | jq -r '.ssl // false')
         ssl_verify=$(echo "$backend" | jq -r '.ssl_verify // false')
         enable_h2=$(echo "$backend" | jq -r '.enable_h2 // false')
-        
+
         debug_log "Processing backend: $name"
-        
+
         # Skip this backend if essential information is missing
-        if [ "$name" = "null" ] || [ -z "$name" ] || 
+        if [ "$name" = "null" ] || [ -z "$name" ] ||
            [ "$mode" = "null" ] || [ -z "$mode" ]; then
             debug_log "Warning: Skipping backend with missing essential information. Name: $name, Mode: $mode" | ts '%Y-%m-%d %H:%M:%S'
             continue
@@ -588,7 +588,7 @@ generate_backend_configs() {
         # Set default values for timeout if they are null or empty
         timeout_connect=${timeout_connect:-5000}
         timeout_server=${timeout_server:-50000}
-        
+
         health_check=""
         server_check=""
         retries="retries 3"
@@ -600,7 +600,7 @@ generate_backend_configs() {
     http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
 "
         fi
-        
+
         if echo "$backend" | jq -e '.check' > /dev/null; then
             if echo "$backend" | jq -e '.check.disable == true' > /dev/null; then
                 health_check=""
