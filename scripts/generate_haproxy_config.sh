@@ -200,7 +200,7 @@ frontend http
 
     # ACME challenge must be first, before any redirects
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if { path_beg '/.well-known/acme-challenge/' }
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}" if { path_beg '/.well-known/acme-challenge/' }
 
     # All other requests get redirected to HTTPS
     http-request redirect scheme https unless is_acme_challenge
