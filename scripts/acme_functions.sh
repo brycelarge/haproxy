@@ -144,7 +144,6 @@ issue_cert() {
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --force \
             --stateless \
             -d "${1}" || {
                 release_lock;
@@ -154,7 +153,6 @@ issue_cert() {
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --force \
             --stateless \
             --dns dns_cf \
             -d "${1}" || {
