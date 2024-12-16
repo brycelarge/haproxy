@@ -71,18 +71,29 @@ install_acme() {
 
     # Create environment file
     s6-setuidgid "${USER}" cat <<EOF > "${HOME_DIR}/acme.sh.env"
+# HAProxy deployment settings
 export DEPLOY_HAPROXY_HOT_UPDATE=yes
 export DEPLOY_HAPROXY_STATS_SOCKET=/var/lib/haproxy/admin.sock
 export DEPLOY_HAPROXY_PEM_PATH=/etc/haproxy/certs
 
-# Cloudflare settings
-export CF_Token=
-export CF_Account_ID=
-export CF_Zone_ID=
+# ACME core settings
+export LE_WORKING_DIR=/config/acme
+export LE_CONFIG_HOME=/config/acme
+export CERT_HOME=/config/acme/certs
 
-# Alternative Cloudflare settings
-export CF_Key=
-export CF_Email=
+# Debug and logging
+export DEBUG=\${DEBUG:-1}
+export LOG_LEVEL=\${LOG_LEVEL:-2}
+
+# Verification method (http is default, can be overridden)
+export ACME_VERIFY_METHOD=\${ACME_VERIFY_METHOD:-http}
+
+# Optional Cloudflare settings (only used if ACME_VERIFY_METHOD=dns_cf)
+export CF_Token=\${CF_Token:-}
+export CF_Account_ID=\${CF_Account_ID:-}
+export CF_Zone_ID=\${CF_Zone_ID:-}
+export CF_Key=\${CF_Key:-}
+export CF_Email=\${CF_Email:-}
 EOF
 
     # Set permissions on env file
@@ -130,11 +141,9 @@ issue_cert() {
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
+            --force \
             --stateless \
             --server letsencrypt \
-            --home $HOME_DIR \
-            --config-home $HOME_DIR \
-            --cert-home $CERT_HOME \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -143,11 +152,10 @@ issue_cert() {
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
+            --force \
+            --stateless \
             --dns dns_cf \
             --server letsencrypt \
-            --home $HOME_DIR \
-            --config-home $HOME_DIR \
-            --cert-home $CERT_HOME \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -170,9 +178,6 @@ deploy_cert() {
 
         source "$HOME_DIR/acme.sh.env";
         DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
-            --home $HOME_DIR \
-            --config-home $HOME_DIR \
-            --cert-home $CERT_HOME \
             --deploy -d "${1}" \
             --deploy-hook haproxy;
 
@@ -196,10 +201,6 @@ renew_cert() {
 
     source "$HOME_DIR/acme.sh.env";
     s6-setuidgid ${USER} /config/acme/acme.sh \
-        --home $HOME_DIR \
-        --config-home $HOME_DIR \
-        --cert-home $CERT_HOME \
-        --server letsencrypt \
         --renew -d "${1}"
 
     release_lock;
@@ -320,9 +321,6 @@ renew_certificate() {
     source /config/acme/acme.sh.env;
 
     /config/acme/acme.sh \
-        --home /config/acme \
-        --config-home /config/acme \
-        --cert-home /config/acme/certs \
         --renew -d "${domain}" \
         --force || {
             log_message "Failed to renew certificate for ${domain}"
@@ -331,9 +329,6 @@ renew_certificate() {
 
     # Deploy the renewed certificate
     /config/acme/acme.sh \
-        --home /config/acme \
-        --config-home /config/acme \
-        --cert-home /config/acme/certs \
         --deploy -d "${domain}" \
         --deploy-hook haproxy || {
             log_message "Failed to deploy certificate for ${domain}"
