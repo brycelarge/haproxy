@@ -13,7 +13,7 @@ CRON_FILE="/etc/crontabs/${USER}"
 LOG_FILE="/var/log/acme-renewals.log"
 HAPROXY_YAML="/config/haproxy.yaml"
 
-# New variable to determine the challenge type
+# determine the challenge type
 ACME_CHALLENGE_TYPE="${ACME_CHALLENGE_TYPE:-dns_cf}"
 
 chown haproxy:haproxy /etc/haproxy/certs
@@ -144,9 +144,7 @@ issue_cert() {
         echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --force \
             --stateless \
-            --server letsencrypt \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -155,10 +153,8 @@ issue_cert() {
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --force \
             --stateless \
             --dns dns_cf \
-            --server letsencrypt \
             -d "${1}" || {
                 release_lock;
                 return 1;
