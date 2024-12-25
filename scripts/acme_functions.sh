@@ -296,7 +296,7 @@ source /config/acme/acme.sh.env
 source /scripts/acme_lock.sh;
 
 # Lock file path
-LOCK_FILE="/run/acme.lock"
+LOCK_FILE="/tmp/acme.lock"
 
 # Log file path
 LOG_FILE="/var/log/haproxy/acme-renewals.log"
