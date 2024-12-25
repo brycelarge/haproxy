@@ -25,13 +25,13 @@ check_haproxy() {
         debug_log "socat failed: $result"
         return 1
     fi
-    
+
     # Check for fatal errors in the process output
     if pgrep -f "haproxy.*$PID_FILE" | xargs -I {} sh -c 'ps -p {} -o command=' | grep -q "Fatal errors found in configuration"; then
         debug_log "Fatal configuration errors detected"
         return 1
     fi
-    
+
     if [ "$HA_DEBUG_ENABLED" = "1" ]; then
         echo "$result"
     fi
@@ -70,6 +70,9 @@ fi
 
 # Perform soft reload
 echo "[Haproxy] Initiating soft reload..." | ts '%Y-%m-%d %H:%M:%S'
+
+# Remove the old PID file to prevent warnings
+rm -f "$PID_FILE"
 
 # Start new HAProxy process in background
 if ! haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
