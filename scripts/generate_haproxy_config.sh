@@ -63,10 +63,7 @@ fi
 : "${MIXED_SSL_MODE:=false}"
 
 if [ -z "${HAPROXY_BIND_IP}" ]; then
-    HAPROXY_BIND_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-    if [ -z "${HAPROXY_BIND_IP}" ]; then
-        HAPROXY_BIND_IP="0.0.0.0"
-    fi
+    HAPROXY_BIND_IP="0.0.0.0"
 fi
 
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
@@ -194,13 +191,19 @@ EOF
 
 cat <<EOF >> "$HAPROXY_CFG"
 frontend http
-    bind        ${HAPROXY_BIND_IP}:80
-    mode        http
-    log	        global
+    bind            ${HAPROXY_BIND_IP}:80
+    mode            http
+    log             global
+    option          http-keep-alive
 
-    # ACME challenge must be first, before any redirects
+    # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}" if { path_beg '/.well-known/acme-challenge/' }
+
+    # Extract the token from the path for ACME challenges
+    http-request set-var(txn.acme_token) path,field(4,/) if is_acme_challenge
+
+    # Return the ACME challenge response
+    http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge
 
     # All other requests get redirected to HTTPS
     http-request redirect scheme https unless is_acme_challenge
@@ -209,10 +212,10 @@ frontend http
     http-request set-header X-Forwarded-Proto https if { ssl_fc }
     option forwardfor
 
+    http-response set-header alt-svc "${ALT_SVC}"
+
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
-
-    http-response set-header alt-svc "${ALT_SVC}"
 
 EOF
 

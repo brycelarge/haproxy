@@ -9,6 +9,7 @@ fi
 USER="acme"
 HOME_DIR="/config/acme"
 CERT_HOME="/config/acme/certs"
+HAPROXY_CERTS_DIR="/etc/haproxy/certs"
 CRON_FILE="/etc/crontabs/${USER}"
 LOG_FILE="/var/log/acme-renewals.log"
 HAPROXY_YAML="/config/haproxy.yaml"
@@ -245,11 +246,11 @@ function check_for_missing_domain_certs() {
                 fi
             else
                 # Check if certificate exists in ACME directory
-                if [ -f "${ACME_CERTS_DIR}/${domain}_ecc/${domain}.cer" ]; then
-                    echo "[acme] Certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
+                if [ -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
+                    echo "[acme] $domain certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
                     deploy_cert "$domain" "$hot_update"
                 else
-                    echo "[acme] Certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                    echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                     issue_cert "$domain" "$hot_update"
                 fi
             fi
