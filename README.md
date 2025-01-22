@@ -22,6 +22,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 9. [ACME Configuration](#acme-configuration)
     - [DNS Challenge Setup](#dns-challenge-setup)
     - [HTTP Challenge Setup](#http-challenge-setup)
+    - [Domain Configuration](#domain-configuration)
 10. [Advanced Usage](#advanced-usage)
     - [Custom Certificates](#custom-certificates)
     - [Healthcheck Configuration](#healthcheck-configuration)
@@ -84,101 +85,175 @@ services:
 
 ## YAML Configuration Examples
 
-### Basic Configuration Structure
+The configuration uses a YAML structure to define HAProxy settings. Here's a real-world example:
+
 ```yaml
-# /config/haproxy.yaml
-global:
-  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
-  - ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+# Basic Settings
+global:  # Global HAProxy settings
 
 defaults:
+  - option http-keep-alive
+  - timeout client 30s
   - timeout connect 5s
-  - timeout client 50s
-  - timeout server 50s
-  - option forwardfor
-  - option http-server-close
+  - timeout server 90s
 
+# Frontend Configurations
 frontend:
   http:
-    - bind "${HAPROXY_BIND_IP}:80"
-    - mode http
-    - option httplog
-    - option forwardfor
-    - redirect scheme https code 301 if !{ ssl_fc }
-
-backend:
-  example_backend:
-    - mode http
-    - balance roundrobin
-    - option httpchk GET /health
-    - server server1 10.0.0.1:8080 check
-    - server server2 10.0.0.2:8080 check
-```
-
-### Advanced Configuration with SSL and QUIC
-```yaml
-# /config/haproxy.yaml
-global:
-  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
-  - ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-  - tune.ssl.default-dh-param 2048
-  - tune.quic.socket-owner haproxy
-
-frontend:
-  http:
-    - bind "${HAPROXY_BIND_IP}:80"
-    - mode http
-    - redirect scheme https code 301 if !{ ssl_fc }
+    - bind *:80 user haproxy group haproxy
+    - default_backend web-backend
 
   https:
-    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
-    - bind "quic4@:443" ssl crt /config/certs/ alpn h3
-    - mode http
-    - http-request set-header X-Forwarded-Proto https
-    - acl host_example hdr(host) -i example.com
-    - use_backend example_backend if host_example
+    - bind *:443 user haproxy group haproxy
+    - default_backend secure-backend
 
-backend:
-  example_backend:
-    - mode http
-    - balance roundrobin
-    - option httpchk
-    - http-check send meth GET uri /health
-    - server web1 192.168.1.10:8080 check ssl verify none
-    - server web2 192.168.1.11:8080 check ssl verify none
+  # IP-restricted frontend example
+  https-offloading-ip-protection:
+    - default_backend restricted-backend
+    - acl network_allowed src 192.168.1.0/24
+    - acl from_allowed_ip req.hdr(X-Forwarded-For) -m ip 192.168.1.0/24
+    - http-request deny unless from_allowed_ip or network_allowed
+
+  https-offloading:
+    - default_backend web-backend
+
+# Domain Rules
+https_frontend_rules:
+  # Standard domains
+  - backend: frontend-offloading
+    match_type: ssl_fc_sni_end
+    domains:
+      - .example.com
+      - .company.com
+  
+  # IP-protected domains
+  - backend: frontend-offloading-ip-protection
+    match_type: ssl_fc_sni
+    domains:
+      - restricted.example.com
+      - admin.example.com
+
+# Domain to Backend Mappings
+The `domain_mappings` array serves two crucial purposes:
+1. It defines the routing rules for HAProxy
+2. It determines which SSL certificates to obtain via acme.sh
+
+When the container starts, it reads this array to:
+- Generate the necessary HAProxy configuration for each domain
+- Automatically request and renew Let's Encrypt certificates for all listed domains
+- Set up the proper SSL termination rules
+
+domain_mappings:
+  # IP-protected service
+  - domain: restricted.example.com
+    frontend: https-offloading-ip-protection
+    backend: restricted-service
+
+  # Standard web service
+  - domain: www.example.com
+    frontend: https-offloading
+    backend: web-service
+
+# Backend Definitions
+backends:
+  # TCP frontend for SSL passthrough
+  - name: frontend-offloading
+    mode: tcp
+    timeout_connect: 5000
+    timeout_server: 5000
+    server_address: socket
+    check:
+      interval: 5000
+      fall: 2
+      rise: 3
+
+  # IP-protected frontend
+  - name: frontend-offloading-ip-protection
+    mode: tcp
+    timeout_connect: 5000
+    timeout_server: 5000
+    server_address: socket
+
+  # Standard HTTP backend
+  - name: web-service
+    mode: http
+    timeout_connect: 5000
+    timeout_server: 5000
+    server_address: 192.168.1.10:80
+
+  # HTTPS backend with SSL
+  - name: secure-service
+    mode: http
+    timeout_connect: 5000
+    timeout_server: 5000
+    server_address: 192.168.1.11:443
+    ssl: true
+    ssl_verify: false
 ```
 
-### Configuration with Multiple Domains and SSL Offloading
+### Configuration Sections Explained
+
+1. **Basic Settings**
+   - `global`: HAProxy global settings
+   - `defaults`: Default timeouts and options
+
+2. **Frontend Types**
+   - `http`: Standard HTTP frontend (port 80)
+   - `https`: Standard HTTPS frontend (port 443)
+   - `https-offloading-ip-protection`: IP-restricted frontend
+   - `https-offloading`: SSL termination frontend
+
+3. **Domain Rules (`https_frontend_rules`)**
+   - Define domain patterns for SSL handling
+   - Support for wildcard domains (`.example.com`)
+   - Different match types (`ssl_fc_sni_end`, `ssl_fc_sni`)
+
+4. **Domain Mappings**
+   - Map specific domains to backends
+   - Support for both standard and IP-protected frontends
+
+5. **Backend Types**
+   - TCP mode for SSL passthrough
+   - HTTP mode for standard web services
+   - Support for SSL backends
+   - Custom timeouts and health checks
+
+### Common Use Cases
+
+1. **Standard Web Service**
 ```yaml
-# /config/haproxy.yaml
-global:
-  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
-  - tune.ssl.default-dh-param 2048
+domain_mappings:
+  - domain: www.example.com
+    frontend: https-offloading
+    backend: web-service
 
-frontend:
-  https:
-    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
-    - mode http
-    - option httplog
-    - acl host_app1 hdr(host) -i app1.example.com
-    - acl host_app2 hdr(host) -i app2.example.com
-    - use_backend app1_backend if host_app1
-    - use_backend app2_backend if host_app2
+backends:
+  - name: web-service
+    mode: http
+    server_address: 192.168.1.10:80
+```
 
-backend:
-  app1_backend:
-    - mode http
-    - balance roundrobin
-    - option httpchk
-    - server app1_1 10.0.0.10:8080 check
-    - server app1_2 10.0.0.11:8080 check
+2. **IP-Restricted Service**
+```yaml
+domain_mappings:
+  - domain: admin.example.com
+    frontend: https-offloading-ip-protection
+    backend: admin-service
 
-  app2_backend:
-    - mode http
-    - balance roundrobin
-    - option httpchk
-    - server app2_1 10.0.0.20:8080 check
-    - server app2_2 10.0.0.21:8080 check
+backends:
+  - name: admin-service
+    mode: http
+    server_address: 192.168.1.20:8080
+```
+
+3. **SSL Backend**
+```yaml
+backends:
+  - name: secure-service
+    mode: http
+    server_address: 192.168.1.30:443
+    ssl: true
+    ssl_verify: false
 ```
 
 ## Configuration
@@ -197,7 +272,9 @@ The YAML configuration file is used to define the HAProxy configuration. The fil
 ```yaml
 # /config/haproxy.yaml
 global:
-  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+  - tune.ssl.default-dh-param 2048
+  - tune.quic.socket-owner haproxy
+  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
   - ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
 
 defaults:
@@ -213,15 +290,45 @@ frontend:
     - mode http
     - option httplog
     - option forwardfor
-    - redirect scheme https code 301 if !{ ssl_fc }
+    - acl is_acme path_beg /.well-known/acme-challenge/
+    - use_backend acme_backend if is_acme
+    - redirect scheme https if !is_acme
+
+  https:
+    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
+    - bind "quic4@:443" ssl crt /config/certs/ alpn h3
+    - mode http
+    - http-response set-header alt-svc "h3=\":443\"; ma=86400"
+    - option httplog
+    - option forwardfor
+    - http-request set-header X-Forwarded-Proto https
 
 backend:
-  example_backend:
+  app1_backend:
     - mode http
-    - balance roundrobin
-    - option httpchk GET /health
-    - server server1 10.0.0.1:8080 check
-    - server server2 10.0.0.2:8080 check
+    - timeout_connect: 5s
+    - timeout_server: 30s
+    enable_h2: true
+    ssl: true
+    ssl_verify: true
+    hosts:
+      - name: web1
+        address: "192.168.1.10:8443"
+        check: true
+        ssl: true
+      - name: web2
+        address: "192.168.1.11:8443"
+        check: true
+        ssl: true
+
+  acme_backend:
+    - mode http
+    - timeout_connect: 5s
+    - timeout_server: 30s
+    hosts:
+      - name: acme
+        address: "127.0.0.1:8080"
+        check: false
 ```
 
 ## Environment Variables
@@ -310,7 +417,106 @@ export CF_Email=your_cf_email
    -p 80:80
    ```
 
+### Domain Configuration
+
+To specify domains for ACME certificate management, you need to:
+
+1. Define your domains in the YAML configuration
+2. Set up the appropriate ACME challenge method
+
+#### Example with Cloudflare DNS Challenge
+```yaml
+# /config/haproxy.yaml
+frontend:
+  https:
+    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
+    - bind "quic4@:443" ssl crt /config/certs/ alpn h3
+    - mode http
+    - acl host_app1 hdr(host) -i app1.example.com
+    - acl host_app2 hdr(host) -i app2.example.com
+    - use_backend app1_backend if host_app1
+    - use_backend app2_backend if host_app2
+```
+
+```bash
+# Environment variables in docker-compose.yml or docker run
+environment:
+  - ACME_EMAIL=your-email@example.com
+  - ACME_CHALLENGE_TYPE=dns_cf
+  - CF_Token=your_cloudflare_token
+  - CF_Account_ID=your_cloudflare_account_id
+  - CF_Zone_ID=your_cloudflare_zone_id
+  - DOMAIN_LIST=app1.example.com,app2.example.com  # List of domains for certificate management
+```
+
+#### Example with HTTP Challenge
+```yaml
+# /config/haproxy.yaml
+frontend:
+  http:
+    - bind "${HAPROXY_BIND_IP}:80"
+    - mode http
+    - acl is_acme path_beg /.well-known/acme-challenge/
+    - use_backend acme_backend if is_acme
+    - redirect scheme https if !is_acme
+
+  https:
+    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
+    - mode http
+    - acl host_app1 hdr(host) -i app1.example.com
+    - use_backend app1_backend if host_app1
+
+backend:
+  acme_backend:
+    - mode http
+    - server acme_srv 127.0.0.1:8080
+```
+
+```bash
+# Environment variables in docker-compose.yml or docker run
+environment:
+  - ACME_EMAIL=your-email@example.com
+  - ACME_CHALLENGE_TYPE=http
+  - DOMAIN_LIST=app1.example.com  # List of domains for certificate management
+```
+
+The container will automatically:
+1. Request certificates for all domains listed in `DOMAIN_LIST`
+2. Store certificates in `/config/certs/`
+3. Automatically renew certificates before expiry
+4. Reload HAProxy configuration when certificates are renewed
+
+> [!NOTE]
+> - Domains must be publicly accessible for ACME verification
+> - For Cloudflare DNS challenge, ensure your API token has the correct zone permissions
+> - For HTTP challenge, port 80 must be accessible from the internet
+
 ## Advanced Usage
+
+### SSL Certificate Management
+
+The container automatically manages SSL certificates using acme.sh and Let's Encrypt. The process works as follows:
+
+1. On container startup, the system reads the `domain_mappings` array
+2. For each domain in the array:
+   - Checks if a valid certificate exists
+   - If not, requests a new certificate from Let's Encrypt
+   - If yes, checks if renewal is needed
+3. Certificates are stored in `/config/certs/`
+4. Automatic renewal is handled by a cron job
+
+Example domain mapping that will get an SSL certificate:
+```yaml
+domain_mappings:
+  - domain: secure.example.com    # Certificate will be requested for this domain
+    frontend: https-offloading
+    backend: secure-backend
+```
+
+The container needs:
+- Port 80 exposed for ACME HTTP challenges
+- A valid email address set via `ACME_EMAIL` environment variable
+- The domains to be properly pointed to your server
 
 ### Firewall Port Forwarding (MIXED_SSL_MODE)
 
