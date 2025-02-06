@@ -189,86 +189,32 @@ cache my-cache
 
 EOF
 
-# Generate HTTPS redirect rules
-https_rules=""
-debug_log "Generating HTTPS redirect rules..."
-
-if [ "$MIXED_SSL_MODE" = "true" ]; then
-    # Process frontend-offloading domains
-    while read -r domain; do
-        if [ -n "$domain" ]; then
-            debug_log "Adding frontend-offloading domain: ${domain}"
-            domain_clean=${domain//[.-]/_}
-            https_rules="${https_rules}    acl acl_${domain_clean} hdr(host) -i ${domain}
-"
-        fi
-    done < <(sed -n '/^  - backend: frontend-offloading/,/^  - /p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
-
-    # Process frontend-offloading-ip-protection domains
-    while read -r domain; do
-        if [ -n "$domain" ]; then
-            debug_log "Adding frontend-offloading-ip-protection domain: ${domain}"
-            domain_clean=${domain//[.-]/_}
-            https_rules="${https_rules}    acl acl_${domain_clean} hdr(host) -i ${domain}
-"
-        fi
-    done < <(sed -n '/^  - backend: frontend-offloading-ip-protection/,/^$/p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
-
-    # Add the redirect rule
-    if [ -n "$https_rules" ]; then
-        https_rules="${https_rules}    http-request redirect scheme https"
-
-        condition=""
-        # Build condition string
-        while read -r domain; do
-            if [ -n "$domain" ]; then
-                domain_clean=${domain//[.-]/_}
-                condition="${condition} acl_${domain_clean} or"
-            fi
-        done < <(sed -n '/^  - backend: frontend-offloading/,/^  - /p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
-
-        while read -r domain; do
-            if [ -n "$domain" ]; then
-                domain_clean=${domain//[.-]/_}
-                condition="${condition} acl_${domain_clean} or"
-            fi
-        done < <(sed -n '/^  - backend: frontend-offloading-ip-protection/,/^$/p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
-
-        if [ -n "$condition" ]; then
-            condition="${condition% or}"
-            https_rules="${https_rules} if ${condition}"
-        fi
-    fi
-else
-    https_rules="    http-request redirect scheme https unless is_acme_challengen"
-    debug_log "Generated default HTTPS redirect rule"
-fi
-
-debug_log "Generated HTTPS rules:\n${https_rules}"
-
 cat <<EOF >> "$HAPROXY_CFG"
 frontend http
     bind            ${HAPROXY_BIND_IP}:80
     mode            http
     log             global
     option          http-keep-alive
+    option          forwardfor
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
 
     # Extract the token from the path for ACME challenges
     http-request set-var(txn.acme_token) path,field(4,/) if is_acme_challenge
+    acl is_our_token var(txn.acme_token) -m str ${ACCOUNT_THUMBPRINT}
 
-    # Return the ACME challenge response
-    http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge
-
-${https_rules}
+    # Return 200 only for our ACME token, let others pass through
+    http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge is_our_token
 
     # Proxy headers
-    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
-    option forwardfor
+    acl https ssl_fc
+    http-request    set-header X-Forwarded-Proto http if !https
+    http-response   set-header alt-svc "h3=":443"; ma=86400, h3-29=":443"; ma=3600" if !https
+	http-request    set-header	X-Forwarded-Proto https if https
 
-    http-response set-header alt-svc "${ALT_SVC}"
+    # Redirect all HTTP to HTTPS (except ACME challenges)
+    http-request redirect scheme https if !is_acme_challenge
 
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
@@ -282,10 +228,9 @@ frontend https
     mode        tcp
     log         global
     option      dontlognull
-    option      log-separate-errors
 
     # Strict TLS inspection with timeout
-    tcp-request inspect-delay 10s
+    tcp-request inspect-delay 5s
     tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
