@@ -1,4 +1,7 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+echo "[rsyslogd] starting.." | ts '%Y-%m-%d %H:%M:%S'
+
+# Run rsyslog as root since it needs to create system sockets
 exec rsyslogd -n
