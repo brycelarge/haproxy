@@ -576,7 +576,7 @@ generate_backend_configs() {
     debug_log "Generating backend configurations"
     echo "$JSON_CONFIG" | jq -c '.backends[]' | while read -r backend; do
         name=$(echo "$backend" | jq -r '.name')
-        mode=$(echo "$backend" | jq -r '.mode')
+        mode=$(echo "$backend" | jq -r '.mode // "http"')
         timeout_connect=$(echo "$backend" | jq -r '.timeout_connect')
         timeout_server=$(echo "$backend" | jq -r '.timeout_server')
         hosts=$(echo "$backend" | jq -r '.hosts[]')
@@ -677,7 +677,7 @@ generate_backend_configs() {
 
         cat <<EOF >> "$HAPROXY_CFG"
 backend $name
-    mode http
+    mode ${mode:-http}
     id $backend_id
     log global
     ${retries}
