@@ -189,6 +189,63 @@ cache my-cache
 
 EOF
 
+# Generate HTTPS redirect rules
+https_rules=""
+debug_log "Generating HTTPS redirect rules..."
+
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    # Process frontend-offloading domains
+    while read -r domain; do
+        if [ -n "$domain" ]; then
+            debug_log "Adding frontend-offloading domain: ${domain}"
+            domain_clean=${domain//[.-]/_}
+            https_rules="${https_rules}    acl acl_${domain_clean} hdr(host) -i ${domain}
+"
+        fi
+    done < <(sed -n '/^  - backend: frontend-offloading/,/^  - /p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
+
+    # Process frontend-offloading-ip-protection domains
+    while read -r domain; do
+        if [ -n "$domain" ]; then
+            debug_log "Adding frontend-offloading-ip-protection domain: ${domain}"
+            domain_clean=${domain//[.-]/_}
+            https_rules="${https_rules}    acl acl_${domain_clean} hdr(host) -i ${domain}
+"
+        fi
+    done < <(sed -n '/^  - backend: frontend-offloading-ip-protection/,/^$/p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
+
+    # Add the redirect rule
+    if [ -n "$https_rules" ]; then
+        https_rules="${https_rules}    http-request redirect scheme https"
+
+        condition=""
+        # Build condition string
+        while read -r domain; do
+            if [ -n "$domain" ]; then
+                domain_clean=${domain//[.-]/_}
+                condition="${condition} acl_${domain_clean} or"
+            fi
+        done < <(sed -n '/^  - backend: frontend-offloading/,/^  - /p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
+
+        while read -r domain; do
+            if [ -n "$domain" ]; then
+                domain_clean=${domain//[.-]/_}
+                condition="${condition} acl_${domain_clean} or"
+            fi
+        done < <(sed -n '/^  - backend: frontend-offloading-ip-protection/,/^$/p' "$YAML_FILE" | grep "^ *- " | grep -v "backend:" | sed 's/^ *- //')
+
+        if [ -n "$condition" ]; then
+            condition="${condition% or}"
+            https_rules="${https_rules} if ${condition}"
+        fi
+    fi
+else
+    https_rules="    http-request redirect scheme https unless is_acme_challengen"
+    debug_log "Generated default HTTPS redirect rule"
+fi
+
+debug_log "Generated HTTPS rules:\n${https_rules}"
+
 cat <<EOF >> "$HAPROXY_CFG"
 frontend http
     bind            ${HAPROXY_BIND_IP}:80
@@ -205,11 +262,10 @@ frontend http
     # Return the ACME challenge response
     http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge
 
-    # All other requests get redirected to HTTPS
-    http-request redirect scheme https unless is_acme_challenge
+${https_rules}
 
     # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
     option forwardfor
 
     http-response set-header alt-svc "${ALT_SVC}"
