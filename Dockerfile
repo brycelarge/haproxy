@@ -137,7 +137,7 @@ RUN \
     mkdir -p \
         /var/lib/haproxy \
         /var/run/haproxy \
-        /var/lib/haproxy/dev/ && \
+        /var/lib/haproxy/dev && \
     chmod 770 /usr/local/bin/healthcheck.sh && \
     chown haproxy:haproxy /var/lib/haproxy && \
     chown haproxy:haproxy /var/run/haproxy && \
@@ -147,7 +147,11 @@ RUN \
     chmod 775 /scripts && \
     chmod +x /scripts/*.sh && \
     chown -R haproxy:haproxy /scripts && \
-    chmod 770 /var/lib/haproxy/dev && \
+    chmod 755 /var/lib/haproxy/dev && \
+    chown haproxy:haproxy /var/lib/haproxy/dev && \
+    touch /var/lib/haproxy/dev/log && \
+    chown haproxy:haproxy /var/lib/haproxy/dev/log && \
+    chmod 755 /var/lib/haproxy/dev/log && \
     setcap 'cap_net_bind_service=+ep' /usr/local/sbin/haproxy && \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \
