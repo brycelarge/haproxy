@@ -233,6 +233,11 @@ frontend https
     # Enhanced TCP logging format
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
 
+    # Block WordPress scanning attempts but allow legitimate WordPress sites
+    acl is_wordpress_scan path_end /wp-includes/wlwmanifest.xml /xmlrpc.php /wp-config.php.bak /wp-config.php.old /wp-config.php.save /wp-config.php.swp /wp-config.php.swo /wp-config.php~ /.wp-config.php.swp
+    acl is_wordpress_scan_path path_beg /.git/ /.svn/ /.env/ /wp-content/debug.log /wp-admin/setup-config.php /wp-includes/theme-compat/
+    tcp-request content reject if is_wordpress_scan || is_wordpress_scan_path
+
     # Strict TLS inspection with timeout
     tcp-request inspect-delay 5s
 
