@@ -181,7 +181,7 @@ EOF
 
 # Generate HAProxy caching configuration
 cat <<EOF >> "$HAPROXY_CFG"
-cache mycache
+cache my-cache
     total-max-size 1024                 # 1GB total cache
     max-object-size 524288              # 512KB max object size
     max-age 3600                        # 1 hour
@@ -426,9 +426,9 @@ generate_https_frontend_config() {
     done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
 
     # Add use_backend rules
-    config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
-    use_backend frontend-offloading if https-offloading
-"
+    config="${config}
+    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+    use_backend frontend-offloading if https-offloading"
 
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
@@ -686,17 +686,21 @@ generate_backend_configs() {
 
         debug_log "Server lines for backend $name: $server_lines"
 
-cat <<EOF >> "$HAPROXY_CFG"
+{
+    cat <<EOF
 backend $name
     mode ${mode:-http}
     id $backend_id
     log global
-$([ -n "$retries" ] && echo "    ${retries}")
-$([ -n "$health_check" ] && echo "    ${health_check}")
-$([ -n "$options_config" ] && echo "${options_config}")
-$([ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings")
-${server_lines}$([ -n "$cache" ] && echo "    ${cache}")
 EOF
+    [ -n "$retries" ] && echo "    ${retries}"
+    [ -n "$health_check" ] && echo "    ${health_check}"
+    [ -n "$options_config" ] && echo "${options_config}"
+    [ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings"
+    echo -n "${server_lines}"
+    [ -n "$cache" ] && echo -n "    ${cache}"
+    echo
+} >> "$HAPROXY_CFG"
 
         backend_id=$((backend_id + 1))
         server_id=$((server_id + 1))
