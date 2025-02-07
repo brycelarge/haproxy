@@ -181,10 +181,10 @@ EOF
 
 # Generate HAProxy caching configuration
 cat <<EOF >> "$HAPROXY_CFG"
-cache my-cache
-    total-max-size 100     # MB
-    max-object-size 100000 # bytes
-    max-age 3600           # seconds
+cache mycache
+    total-max-size 1024                 # 1GB total cache
+    max-object-size 524288              # 512KB max object size
+    max-age 3600                        # 1 hour
     process-vary on
 
 EOF
@@ -227,11 +227,14 @@ frontend https
     bind        ${HAPROXY_BIND_IP}:443
     mode        tcp
     log         global
+    option      tcplog
     option      dontlognull
+
+    # Enhanced TCP logging format
+    log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
 
     # Strict TLS inspection with timeout
     tcp-request inspect-delay 5s
-    tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
     # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
@@ -422,7 +425,8 @@ generate_https_frontend_config() {
     done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
 
     # Add use_backend rules
-    config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+    config="${config}    tcp-request content accept if { req.ssl_hello_type 1 }
+    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
     use_backend frontend-offloading if https-offloading
 "
 
@@ -599,6 +603,13 @@ generate_backend_configs() {
             continue
         fi
 
+        # In your generate_backend_configs function
+        options_config=""
+        if echo "$backend" | jq -e '.options[]' > /dev/null 2>&1; then
+            # Convert each option in the array to a line
+            options_config=$(echo "$backend" | jq -r '.options[]? | "    option " + .')
+        fi
+
         # Set default values for timeout if they are null or empty
         timeout_connect=${timeout_connect:-5000}
         timeout_server=${timeout_server:-50000}
@@ -616,7 +627,7 @@ generate_backend_configs() {
         fi
 
         if echo "$backend" | jq -e '.check' > /dev/null; then
-            if echo "$backend" | jq -e '.check.disable == true' > /dev/null; then
+            if echo "$backend" | jq -e '.check.disabled == true' > /dev/null; then
                 health_check=""
                 server_check=""
             else
@@ -675,16 +686,16 @@ generate_backend_configs() {
 
         debug_log "Server lines for backend $name: $server_lines"
 
-        cat <<EOF >> "$HAPROXY_CFG"
+cat <<EOF >> "$HAPROXY_CFG"
 backend $name
     mode ${mode:-http}
     id $backend_id
     log global
-    ${retries}
-    ${health_check}
-    $([ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings")
-${server_lines}
-    ${cache}
+$([ -n "$retries" ] && echo "    ${retries}")
+$([ -n "$health_check" ] && echo "    ${health_check}")
+$([ -n "$options_config" ] && echo "${options_config}")
+$([ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings")
+${server_lines}$([ -n "$cache" ] && echo "    ${cache}")
 EOF
 
         backend_id=$((backend_id + 1))
