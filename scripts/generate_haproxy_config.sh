@@ -236,7 +236,8 @@ frontend https
     # Block WordPress scanning attempts but allow legitimate WordPress sites
     acl is_wordpress_scan path_end /wp-includes/wlwmanifest.xml /xmlrpc.php /wp-config.php.bak /wp-config.php.old /wp-config.php.save /wp-config.php.swp /wp-config.php.swo /wp-config.php~ /.wp-config.php.swp
     acl is_wordpress_scan_path path_beg /.git/ /.svn/ /.env/ /wp-content/debug.log /wp-admin/setup-config.php /wp-includes/theme-compat/
-    tcp-request content reject if is_wordpress_scan || is_wordpress_scan_path
+    acl is_wordpress_scan_query url_reg -i xmlrpc\.php\?rsd
+    tcp-request content reject if is_wordpress_scan || is_wordpress_scan_path || is_wordpress_scan_query
 
     # Strict TLS inspection with timeout
     tcp-request inspect-delay 5s
