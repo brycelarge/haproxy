@@ -233,14 +233,9 @@ frontend https
     # Enhanced TCP logging format
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
 
-    # Block WordPress scanning attempts but allow legitimate WordPress sites
-    acl is_wordpress_scan path_end /wp-includes/wlwmanifest.xml /xmlrpc.php /wp-config.php.bak /wp-config.php.old /wp-config.php.save /wp-config.php.swp /wp-config.php.swo /wp-config.php~ /.wp-config.php.swp
-    acl is_wordpress_scan_path path_beg /.git/ /.svn/ /.env/ /wp-content/debug.log /wp-admin/setup-config.php /wp-includes/theme-compat/
-    acl is_wordpress_scan_query url_reg -i xmlrpc\.php\?rsd
-    tcp-request content reject if is_wordpress_scan || is_wordpress_scan_path || is_wordpress_scan_query
-
     # Strict TLS inspection with timeout
     tcp-request inspect-delay 5s
+    tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
     # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
@@ -431,8 +426,7 @@ generate_https_frontend_config() {
     done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
 
     # Add use_backend rules
-    config="${config}    tcp-request content accept if { req.ssl_hello_type 1 }
-    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+    config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
     use_backend frontend-offloading if https-offloading
 "
 
