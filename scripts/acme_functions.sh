@@ -277,7 +277,7 @@ verify_cron() {
     fi
 }
 
-setup_acme_renewal() {
+function setup_acme_renewal() {
     echo "[acme] Setting up ACME certificate renewal cron job" | ts '%Y-%m-%d %H:%M:%S'
 
     # Ensure log file exists and has correct permissions
@@ -289,48 +289,112 @@ setup_acme_renewal() {
     cat << 'EOF' > /usr/local/bin/renew-certs.sh
 #!/usr/bin/with-contenv bash
 
+# Ensure all required packages are available
+if ! command -v socat &> /dev/null; then
+    echo "Error: socat not found. Please install it."
+    exit 1
+fi
+
+# Source environment variables and make path available
+if [ -f /etc/profile ]; then
+    source /etc/profile
+fi
+
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 # Source environment variables
-source /config/acme/acme.sh.env
+if [ -f /config/acme/acme.sh.env ]; then
+    source /config/acme/acme.sh.env
+else
+    echo "Error: /config/acme/acme.sh.env not found"
+    exit 1
+fi
 
 # make sure acme is not running multiple times
-source /scripts/acme_lock.sh;
+if [ -f /scripts/acme_lock.sh ]; then
+    source /scripts/acme_lock.sh
+else
+    echo "Error: /scripts/acme_lock.sh not found"
+    exit 1
+fi
 
 # Lock file path
 LOCK_FILE="/tmp/acme.lock"
 
 # Log file path
-LOG_FILE="/var/log/haproxy/acme-renewals.log"
+LOG_FILE="/var/log/acme-renewals.log"
 
 # Function to log messages
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - $1" | tee -a "$LOG_FILE"
 }
 
+log_message "Starting certificate renewal process"
+
 # Main renewal process
 if ! acquire_lock; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Another ACME process is running, skipping renewal" | tee -a "$LOG_FILE"
+    log_message "Another ACME process is running, skipping renewal"
     exit 1
 fi
 
 trap cleanup EXIT
 
+# HAProxy socket check
+HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
+if [ ! -S "$HAPROXY_SOCKET" ]; then
+    log_message "Error: HAProxy socket not found at $HAPROXY_SOCKET"
+    exit 1
+fi
+
+# Function to verify HAProxy is running
+verify_haproxy() {
+    if ! echo "show info" | socat stdio "unix-connect:$HAPROXY_SOCKET" &>/dev/null; then
+        log_message "Error: HAProxy is not responding"
+        return 1
+    fi
+    return 0
+}
+
+# Check HAProxy before proceeding
+if ! verify_haproxy; then
+    log_message "Aborting: HAProxy is not operational"
+    exit 1
+fi
+
 # Function to renew a single certificate
 renew_certificate() {
     local domain="$1"
     log_message "Starting renewal for ${domain}"
-    source /config/acme/acme.sh.env;
+    
+    # Debug output - show environment 
+    env >> "$LOG_FILE" 2>&1
+    
+    # Check if acme.sh exists
+    if [ ! -f "/config/acme/acme.sh" ]; then
+        log_message "Error: acme.sh not found at /config/acme/acme.sh"
+        return 1
+    fi
+    
+    # Ensure we have write permissions to cert directories
+    if [ ! -w "/config/acme/certs" ] || [ ! -w "/etc/haproxy/certs" ]; then
+        log_message "Error: Missing write permissions to certificate directories"
+        return 1
+    fi
 
+    # Run renewal with verbose output
+    log_message "Executing renew command for ${domain}"
     /config/acme/acme.sh \
         --renew -d "${domain}" \
-        --force || {
+        --force --debug >> "$LOG_FILE" 2>&1 || {
             log_message "Failed to renew certificate for ${domain}"
             return 1
         }
 
     # Deploy the renewed certificate
+    log_message "Deploying renewed certificate for ${domain}"
     /config/acme/acme.sh \
         --deploy -d "${domain}" \
-        --deploy-hook haproxy || {
+        --deploy-hook haproxy --debug >> "$LOG_FILE" 2>&1 || {
             log_message "Failed to deploy certificate for ${domain}"
             return 1
         }
@@ -339,14 +403,42 @@ renew_certificate() {
     return 0
 }
 
-# Main renewal process
-log_message "Starting certificate renewal process"
-
 # Get list of all domains with certificates
-find /config/acme/certs -name "*.conf" | while read -r conf_file; do
-    domain=$(basename "$conf_file" .conf)
-    renew_certificate "$domain"
-done
+log_message "Scanning for domains that need renewal"
+DOMAINS_FOUND=0
+if [ -d "/config/acme/certs" ]; then
+    find /config/acme/certs -name "*.conf" | while read -r conf_file; do
+        domain=$(basename "$conf_file" .conf)
+        log_message "Found domain: $domain"
+        DOMAINS_FOUND=$((DOMAINS_FOUND+1))
+        renew_certificate "$domain"
+    done
+else
+    log_message "Error: Certificate directory /config/acme/certs not found"
+fi
+
+if [ "$DOMAINS_FOUND" -eq 0 ]; then
+    log_message "No domains found for renewal. Checking YAML file."
+    
+    # If no domains found in certs directory, try to get domains from yaml
+    if [ -f "/config/haproxy.yaml" ]; then
+        if command -v yq &> /dev/null; then
+            DOMAINS=$(yq e '.domain_mappings[].domain' "/config/haproxy.yaml" | sort | uniq)
+            if [ -n "$DOMAINS" ]; then
+                log_message "Found domains in YAML file: $DOMAINS"
+                echo "$DOMAINS" | while read -r domain; do
+                    renew_certificate "$domain"
+                done
+            else
+                log_message "No domains found in YAML file"
+            fi
+        else
+            log_message "Warning: yq command not found, cannot extract domains from YAML"
+        fi
+    else
+        log_message "Warning: /config/haproxy.yaml not found"
+    fi
+fi
 
 log_message "Certificate renewal process completed"
 EOF
@@ -357,11 +449,14 @@ EOF
 
     # Create the cron job
     # Run at 2:30 AM on Monday and Thursday
-    echo "30 2 * * 1,4 /usr/local/bin/renew-certs.sh > /dev/null 2>&1" > "$CRON_FILE"
+    echo "30 2 * * 1,4 /usr/local/bin/renew-certs.sh > $LOG_FILE 2>&1" > "$CRON_FILE"
 
     # Make sure cron file has correct permissions
     chmod 600 "$CRON_FILE"
     chown "${USER}:${USER}" "$CRON_FILE"
+
+    # Install the crontab file
+    s6-setuidgid "${USER}" crontab "$CRON_FILE"
 
     echo "[acme] Cron job set up successfully" | ts '%Y-%m-%d %H:%M:%S'
     echo "[acme] Renewal schedule: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
@@ -369,6 +464,6 @@ EOF
     # Show the current cron configuration
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         debug_log "Current cron configuration:"
-        cat "$CRON_FILE"
+        s6-setuidgid "${USER}" crontab -l
     fi
 }

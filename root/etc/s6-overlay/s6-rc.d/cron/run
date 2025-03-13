@@ -1,0 +1,14 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+echo "[cron] Starting cron daemon to handle certificate renewals..." | ts '%Y-%m-%d %H:%M:%S'
+
+# Create required directories
+mkdir -p /etc/crontabs /var/spool/cron/crontabs
+
+# Ensure cron log exists
+touch /var/log/cron.log
+chmod 640 /var/log/cron.log
+
+# Start cron daemon with debugging
+exec crond -f -L /var/log/cron.log 

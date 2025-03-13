@@ -41,3 +41,39 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
 done
 
 check_for_missing_domain_certs "no"
+
+# Make sure cron renewal is properly set up
+echo "[acme] Setting up certificate renewal cron job..." | ts '%Y-%m-%d %H:%M:%S'
+
+# Ensure the renewal script exists and is executable
+if [ ! -x "/usr/local/bin/renew-certs.sh" ]; then
+    setup_acme_renewal
+else
+    # Ensure script has correct permissions
+    chmod +x /usr/local/bin/renew-certs.sh
+    chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
+fi
+
+# Verify the cron job is properly installed
+if ! s6-setuidgid "${USER}" crontab -l 2>/dev/null | grep -q "/usr/local/bin/renew-certs.sh"; then
+    echo "[acme] Cron job not found, reinstalling..." | ts '%Y-%m-%d %H:%M:%S'
+    setup_acme_renewal
+else
+    echo "[acme] Cron job is installed correctly" | ts '%Y-%m-%d %H:%M:%S'
+fi
+
+# Run a test renewal to verify functionality
+echo "[acme] Running a test certificate check..." | ts '%Y-%m-%d %H:%M:%S'
+s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh 
+
+# Verify that cron daemon is running (should be started by the cron service)
+if pgrep -x "crond" > /dev/null; then
+    echo "[acme] Cron daemon is running" | ts '%Y-%m-%d %H:%M:%S'
+else
+    echo "[acme] Warning: Cron daemon not detected, certificates may not auto-renew" | ts '%Y-%m-%d %H:%M:%S'
+fi
+
+echo "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
+
+# Keep the service running
+tail -f /dev/null
