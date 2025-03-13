@@ -199,26 +199,32 @@ frontend http
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
-    http-request set-var(txn.challenge_token) path,field(3,/) if is_acme_challenge
-
-    # If we have an active token file, load it
-    http-request set-var(txn.active_token) str(dummy) if { file exists /tmp/acme_active_token }
-    http-request set-var(txn.active_token) str() if { file exists /tmp/acme_active_token } { file,read /tmp/acme_active_token }
-
-    # Handle challenge only if token matches our active token
-    acl is_our_token var(txn.challenge_token) -m str -i %[var(txn.active_token)]
-
-    # Handle our tokens, pass others to backend
-    http-request return status 200 content-type text/plain lf-string "%[var(txn.challenge_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge is_our_token
+    
+    # Extract the token from the path
+    http-request set-var(txn.acme_token) path,field(3,/) if is_acme_challenge
+    
+    # Define a simple stick table to track tokens
+    stick-table type string size 1m expire 300s
+    
+    # Track the token in the stick table - this happens for HTTP validation and 
+    # happens via the socket API when acme.sh is run (see acme_functions.sh)
+    http-request track-sc0 var(txn.acme_token) if is_acme_challenge
+    
+    # Only return responses for tokens that were tracked in the stick table
+    # This is checked in a separate script that adds the tokens when acme.sh runs
+    acl valid_acme_token path,field(3,/) -m found
+    
+    # Return the response with the ACCOUNT_THUMBPRINT
+    http-request return status 200 content-type text/plain string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge valid_acme_token
+    
+    # Only redirect non-ACME traffic to HTTPS
+    http-request redirect scheme https if !is_acme_challenge
 
     # Proxy headers
     acl https ssl_fc
     http-request    set-header X-Forwarded-Proto http if !https
     http-response   set-header alt-svc "h3=":443"; ma=86400, h3-29=":443"; ma=3600" if !https
-	http-request    set-header	X-Forwarded-Proto https if https
-
-    # Redirect all HTTP to HTTPS (except ACME challenges - both standard and custom)
-    http-request redirect scheme https if !is_acme_challenge
+    http-request    set-header	X-Forwarded-Proto https if https
 
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]

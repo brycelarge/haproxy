@@ -141,34 +141,38 @@ issue_cert() {
     echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
-        echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
         
-        # Add --debug to see challenge details
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        # Run acme.sh and capture the output directly
+        ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --stateless \
-            --standalone \
-            --httpport 80 \
             -d "${1}" \
-            --debug > /tmp/acme_challenge.log 2>&1 || {
+            --debug 2>&1) || {
+                echo "[acme] Failed to issue certificate for ${1}" | ts '%Y-%m-%d %H:%M:%S'
                 release_lock;
                 return 1;
             };
         
-        # Extract token from debug output and store it - try multiple patterns
-        CHALLENGE_TOKEN=$(grep -o "Adding challenge entry '[^']*'" /tmp/acme_challenge.log | cut -d "'" -f 2)
+        # Extract token directly from the command output
+        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o "Adding challenge entry '[^']*'" | cut -d "'" -f 2)
         if [ -z "$CHALLENGE_TOKEN" ]; then
-            CHALLENGE_TOKEN=$(grep -o "http-01 challenge for [^:]*: [^,]*" /tmp/acme_challenge.log | cut -d ":" -f 2 | tr -d " ")
+            CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o "http-01 challenge for [^:]*: [^,]*" | cut -d ":" -f 2 | tr -d " ")
         fi
         
         if [ -n "$CHALLENGE_TOKEN" ]; then
-            echo "$CHALLENGE_TOKEN" > /tmp/acme_active_token
-            chmod 644 /tmp/acme_active_token
-            # Set a short TTL for this file
-            (sleep 300; rm -f /tmp/acme_active_token) &
-            echo "[acme] Extracted token: $CHALLENGE_TOKEN (temporarily stored for HAProxy)" | ts '%Y-%m-%d %H:%M:%S'
+            # Store directly in HAProxy's stick table using socket API
+            HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
+            if [ -S "$HAPROXY_SOCKET" ]; then
+                # Just add the token to the stick table - value doesn't matter, just marking it as valid
+                echo "set table http key ${CHALLENGE_TOKEN} data 1" | socat - "unix-connect:${HAPROXY_SOCKET}"
+                echo "[acme] Added token to HAProxy stick table: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
+                echo "[acme] Token will auto-expire after 5 minutes" | ts '%Y-%m-%d %H:%M:%S'
+            else
+                echo "[acme] Warning: HAProxy socket not found, cannot store token" | ts '%Y-%m-%d %H:%M:%S'
+            fi
         else
-            echo "[acme] Warning: Failed to extract challenge token from debug output" | ts '%Y-%m-%d %H:%M:%S'
+            echo "[acme] Warning: Failed to extract challenge token from output" | ts '%Y-%m-%d %H:%M:%S'
         fi
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
@@ -235,6 +239,21 @@ extract_domains() {
 function check_for_missing_domain_certs() {
     # Should we reload haproxy
     local hot_update=${1:-"yes"}
+
+    # Wait for HAProxy to fully initialize
+    echo "[acme] Waiting for HAProxy to fully initialize before processing certificates..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 10
+    
+    # Verify HAProxy is running by checking the socket
+    if [ -S "/var/lib/haproxy/admin.sock" ]; then
+        if ! echo "show info" | socat stdio "unix-connect:/var/lib/haproxy/admin.sock" &>/dev/null; then
+            echo "[acme] Warning: HAProxy is not responding, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
+        else
+            echo "[acme] HAProxy is running and responsive" | ts '%Y-%m-%d %H:%M:%S'
+        fi
+    else
+        echo "[acme] Warning: HAProxy socket not found, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
+    fi
 
     # Create an array of domains
     mapfile -t domains < <(extract_domains)
