@@ -278,7 +278,7 @@ verify_cron() {
 }
 
 function setup_acme_renewal() {
-    echo "[acme] Setting up ACME certificate renewal cron job" | ts '%Y-%m-%d %H:%M:%S'
+    echo "[acme] Setting up ACME certificate renewal job" | ts '%Y-%m-%d %H:%M:%S'
 
     # Ensure log file exists and has correct permissions
     touch "$LOG_FILE"
@@ -447,23 +447,27 @@ EOF
     chmod +x /usr/local/bin/renew-certs.sh
     chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
 
-    # Create the cron job
-    # Run at 2:30 AM on Monday and Thursday
-    echo "30 2 * * 1,4 /usr/local/bin/renew-certs.sh > $LOG_FILE 2>&1" > "$CRON_FILE"
+    # Instead of using crontab, we'll create a direct cron entry in /etc/cron.d
+    echo "[acme] Creating renewal job in /etc/cron.d" | ts '%Y-%m-%d %H:%M:%S'
+    
+    # Create the cron.d directory if it doesn't exist
+    mkdir -p /etc/cron.d
+    
+    # Create the cron file in /etc/cron.d with proper ownership
+    cat << EOF > /etc/cron.d/acme-renewal
+# Run certificate renewal at 2:30 AM on Monday and Thursday
+30 2 * * 1,4 ${USER} /usr/local/bin/renew-certs.sh > ${LOG_FILE} 2>&1
+EOF
 
     # Make sure cron file has correct permissions
-    chmod 600 "$CRON_FILE"
-    chown "${USER}:${USER}" "$CRON_FILE"
-
-    # Install the crontab file
-    s6-setuidgid "${USER}" crontab "$CRON_FILE"
-
+    chmod 0644 /etc/cron.d/acme-renewal
+    
     echo "[acme] Cron job set up successfully" | ts '%Y-%m-%d %H:%M:%S'
     echo "[acme] Renewal schedule: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
 
     # Show the current cron configuration
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         debug_log "Current cron configuration:"
-        s6-setuidgid "${USER}" crontab -l
+        cat /etc/cron.d/acme-renewal
     fi
 }
