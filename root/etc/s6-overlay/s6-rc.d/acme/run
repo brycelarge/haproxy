@@ -5,6 +5,8 @@ source /scripts/acme_functions.sh # issue_cert and deploy_cert functions
 source /scripts/debug.sh
 
 ACME_THUMBPRINT="/config/acme/ca/thumbprint"
+HAPROXY_PID_FILE="/var/run/haproxy/haproxy.pid"
+HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
 
 # Path to HAProxy certificates
 HAPROXY_CERTS_DIR="/etc/haproxy/certs"
@@ -12,13 +14,30 @@ HAPROXY_CERTS_DIR="/etc/haproxy/certs"
 # Path to ACME certificates (adjust if needed)
 ACME_CERTS_DIR="/config/acme/certs"
 
-# Loop until both files exist
+# Loop until acme thumbprint file exists
 while [ ! -f "$ACME_THUMBPRINT" ]; do
     echo "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 3
 done
 
-echo "[acme] waiting for 15 seconds before starting to parse and issue certificates..." | ts '%Y-%m-%d %H:%M:%S'
-sleep 15; # make sure haproxy is up and stable
+# Wait for HAProxy to be fully started by checking for its PID file and socket
+echo "[acme] waiting for HAProxy to be fully started..." | ts '%Y-%m-%d %H:%M:%S'
+while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
+    echo "[acme] waiting for HAProxy to be fully started (PID file: $([ -f "$HAPROXY_PID_FILE" ] && echo "exists" || echo "missing"), Socket: $([ -S "$HAPROXY_SOCKET" ] && echo "exists" || echo "missing"))..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 5
+done
+
+# Additional check to ensure HAProxy is responding
+MAX_ATTEMPTS=12
+ATTEMPT=0
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    if echo "show info" | socat stdio "unix-connect:$HAPROXY_SOCKET" &>/dev/null; then
+        echo "[acme] HAProxy is fully operational, proceeding with certificate checks..." | ts '%Y-%m-%d %H:%M:%S'
+        break
+    fi
+    echo "[acme] HAProxy is not responding yet, waiting (attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)..." | ts '%Y-%m-%d %H:%M:%S'
+    ATTEMPT=$((ATTEMPT+1))
+    sleep 5
+done
 
 check_for_missing_domain_certs "no"
