@@ -199,13 +199,17 @@ frontend http
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
+    http-request set-var(txn.challenge_token) path,field(3,/) if is_acme_challenge
 
-    # Extract the token from the path for ACME challenges
-    http-request set-var(txn.acme_token) path,field(4,/) if is_acme_challenge
-    acl is_our_token var(txn.acme_token) -m str ${ACCOUNT_THUMBPRINT}
+    # If we have an active token file, load it
+    http-request set-var(txn.active_token) str(dummy) if { file exists /tmp/acme_active_token }
+    http-request set-var(txn.active_token) str() if { file exists /tmp/acme_active_token } { file,read /tmp/acme_active_token }
 
-    # Return 200 only for our ACME token, let others pass through
-    http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge is_our_token
+    # Handle challenge only if token matches our active token
+    acl is_our_token var(txn.challenge_token) -m str -i %[var(txn.active_token)]
+
+    # Handle our tokens, pass others to backend
+    http-request return status 200 content-type text/plain lf-string "%[var(txn.challenge_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge is_our_token
 
     # Proxy headers
     acl https ssl_fc
@@ -213,7 +217,7 @@ frontend http
     http-response   set-header alt-svc "h3=":443"; ma=86400, h3-29=":443"; ma=3600" if !https
 	http-request    set-header	X-Forwarded-Proto https if https
 
-    # Redirect all HTTP to HTTPS (except ACME challenges)
+    # Redirect all HTTP to HTTPS (except ACME challenges - both standard and custom)
     http-request redirect scheme https if !is_acme_challenge
 
     # Placed by yaml frontend http:

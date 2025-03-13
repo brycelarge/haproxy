@@ -10,7 +10,6 @@ USER="acme"
 HOME_DIR="/config/acme"
 CERT_HOME="/config/acme/certs"
 HAPROXY_CERTS_DIR="/etc/haproxy/certs"
-CRON_FILE="/etc/crontabs/${USER}"
 LOG_FILE="/var/log/acme-renewals.log"
 HAPROXY_YAML="/config/haproxy.yaml"
 
@@ -142,14 +141,35 @@ issue_cert() {
     echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
-        echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S';
+        echo "[acme] Using HTTP challenge with HAProxy" | ts '%Y-%m-%d %H:%M:%S'
+        
+        # Add --debug to see challenge details
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --stateless \
-            -d "${1}" || {
+            --standalone \
+            --httpport 80 \
+            -d "${1}" \
+            --debug > /tmp/acme_challenge.log 2>&1 || {
                 release_lock;
                 return 1;
             };
+        
+        # Extract token from debug output and store it - try multiple patterns
+        CHALLENGE_TOKEN=$(grep -o "Adding challenge entry '[^']*'" /tmp/acme_challenge.log | cut -d "'" -f 2)
+        if [ -z "$CHALLENGE_TOKEN" ]; then
+            CHALLENGE_TOKEN=$(grep -o "http-01 challenge for [^:]*: [^,]*" /tmp/acme_challenge.log | cut -d ":" -f 2 | tr -d " ")
+        fi
+        
+        if [ -n "$CHALLENGE_TOKEN" ]; then
+            echo "$CHALLENGE_TOKEN" > /tmp/acme_active_token
+            chmod 644 /tmp/acme_active_token
+            # Set a short TTL for this file
+            (sleep 300; rm -f /tmp/acme_active_token) &
+            echo "[acme] Extracted token: $CHALLENGE_TOKEN (temporarily stored for HAProxy)" | ts '%Y-%m-%d %H:%M:%S'
+        else
+            echo "[acme] Warning: Failed to extract challenge token from debug output" | ts '%Y-%m-%d %H:%M:%S'
+        fi
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
