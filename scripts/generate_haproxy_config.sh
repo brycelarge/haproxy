@@ -205,11 +205,7 @@ frontend http
     
     # Define a simple stick table to track tokens
     stick-table type string size 1m expire 300s
-    
-    # Track the token in the stick table - this happens for HTTP validation and 
-    # happens via the socket API when acme.sh is run (see acme_functions.sh)
-    http-request track-sc0 var(txn.acme_token) if is_acme_challenge
-    
+   
     # Only return responses for tokens that were tracked in the stick table
     # This is checked in a separate script that adds the tokens when acme.sh runs
     acl valid_acme_token path,field(3,/) -m found

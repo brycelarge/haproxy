@@ -129,6 +129,29 @@ register_acme() {
     setup_acme_renewal
 }
 
+add_challenge_token() {
+    local ACME_OUTPUT="$1"
+    local CHALLENGE_TOKEN
+
+    CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'token='"'"'[^'"'"']*'"'"'' | cut -d"'" -f2)
+    if [ -z "$CHALLENGE_TOKEN" ]; then
+        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'Using challenge: http-01.*' | grep -o '[A-Za-z0-9_-]\{43\}')
+    fi
+
+    if [ -z "$CHALLENGE_TOKEN" ]; then
+        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    fi
+
+    if [ -n "$CHALLENGE_TOKEN" ]; then
+        echo "set table http key ${CHALLENGE_TOKEN}" | socat - "unix-connect:/var/lib/haproxy/admin.sock"
+        echo "[acme] Added token to HAProxy stick table: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
+        return 0
+    else
+        echo "[acme] Warning: Failed to extract challenge token" | ts '%Y-%m-%d %H:%M:%S'
+        return 1
+    fi
+}
+
 issue_cert() {
     if ! acquire_lock; then
         return 1
@@ -143,43 +166,23 @@ issue_cert() {
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
         echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
         
-        # Run acme.sh and capture the output directly
+        # Run acme.sh with consistent debug flags
         ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --stateless \
             -d "${1}" \
-            --debug 2>&1) || {
-                echo "[acme] Failed to issue certificate for ${1}" | ts '%Y-%m-%d %H:%M:%S'
-                release_lock;
-                return 1;
-            };
+            --debug \
+            --log-level 3 2>&1)
         
-        # Extract token directly from the command output
-        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o "Adding challenge entry '[^']*'" | cut -d "'" -f 2)
-        if [ -z "$CHALLENGE_TOKEN" ]; then
-            CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o "http-01 challenge for [^:]*: [^,]*" | cut -d ":" -f 2 | tr -d " ")
-        fi
-        
-        if [ -n "$CHALLENGE_TOKEN" ]; then
-            # Store directly in HAProxy's stick table using socket API
-            HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
-            if [ -S "$HAPROXY_SOCKET" ]; then
-                # Just add the token to the stick table - value doesn't matter, just marking it as valid
-                echo "set table http key ${CHALLENGE_TOKEN} data 1" | socat - "unix-connect:${HAPROXY_SOCKET}"
-                echo "[acme] Added token to HAProxy stick table: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
-                echo "[acme] Token will auto-expire after 5 minutes" | ts '%Y-%m-%d %H:%M:%S'
-            else
-                echo "[acme] Warning: HAProxy socket not found, cannot store token" | ts '%Y-%m-%d %H:%M:%S'
-            fi
-        else
-            echo "[acme] Warning: Failed to extract challenge token from output" | ts '%Y-%m-%d %H:%M:%S'
-        fi
+        add_challenge_token "$ACME_OUTPUT"
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --stateless \
             --dns dns_cf \
+            --debug \
+            --log-level 3 \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -187,9 +190,7 @@ issue_cert() {
     fi
 
     release_lock;
-
-    # If certificate was issued successfully deploy it
-    deploy_cert "${1}" "${hot_update}"
+    deploy_cert "${1}" "${hot_update}";
 }
 
 deploy_cert() {
@@ -222,13 +223,23 @@ renew_cert() {
 
     trap cleanup EXIT
     local hot_update=${2:-"yes"}
+    local domain="${1}"
 
     source "$HOME_DIR/acme.sh.env";
-    s6-setuidgid ${USER} /config/acme/acme.sh \
-        --renew -d "${1}"
-
+    
+    echo "[acme] Running renewal for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
+    
+    # Use same debug flags as issue_cert
+    ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        --renew \
+        -d "${domain}" \
+        --debug \
+        --log-level 3 2>&1)
+    
+    add_challenge_token "$ACME_OUTPUT"
+    
     release_lock;
-    deploy_cert "${1}" "${hot_update}";
+    deploy_cert "${domain}" "${hot_update}";
 }
 
 # Function to extract domains from the YAML file
