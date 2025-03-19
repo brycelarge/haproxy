@@ -457,7 +457,7 @@ renew_certificate() {
 log_message "Scanning for domains that need renewal"
 DOMAINS_FOUND=0
 if [ -d "/config/acme/certs" ]; then
-    find /config/acme/certs -name "*.conf" | while read -r conf_file; do
+    find /config/acme/certs -name "*.conf" | grep -v ".csr.conf" | while read -r conf_file; do
         domain=$(basename "$conf_file" .conf)
         log_message "Found domain: $domain"
         DOMAINS_FOUND=$((DOMAINS_FOUND+1))
