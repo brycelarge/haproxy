@@ -139,22 +139,29 @@ issue_cert() {
 
     echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
 
+    if [ "$DEBUG" = "true" ]; then
+        DEBUG_FLAG="--debug"
+    else
+        DEBUG_FLAG=""
+    fi
+
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
         echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
         add_domain_to_haproxy "$1"
 
-        ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh"
             --issue \
             -d "${1}" \
-            --debug \
-            2>&1)
-
-        debug_log "$ACME_OUTPUT"
+            ${DEBUG_FLAG} || {
+                release_lock;
+                return 1;
+            };
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             --dns dns_cf \
+            ${DEBUG_FLAG} \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -191,6 +198,7 @@ deploy_cert() {
         # Verify certificate exists and is valid
         if [ -f "$cert_path" ] && openssl x509 -in "$cert_path" -noout -checkend 0 >/dev/null 2>&1; then
             echo "[acme] Certificate successfully deployed and validated for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
+            kill -HUP $(pidof rsyslogd)
         else
             echo "[acme] Warning: Certificate deployment completed but validation failed for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
         fi
@@ -217,13 +225,19 @@ renew_cert() {
     echo "[acme] Running renewal for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
     add_domain_to_haproxy "$domain"
 
+    if [ "$DEBUG" = "true" ]; then
+        DEBUG_FLAG="--debug"
+    else
+        DEBUG_FLAG=""
+    fi
+
     ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
         --renew \
         -d "${domain}" \
-        --debug \
+        ${DEBUG_FLAG} \
         2>&1)
 
-    debug_log "$ACME_OUTPUT"
+    echo "$ACME_OUTPUT"
 
     # Check if renewal was successful
     if echo "$ACME_OUTPUT" | grep -q "Skip, Next renewal time is:"; then
@@ -287,6 +301,7 @@ function check_for_missing_domain_certs() {
     for domain in "${domains[@]}"; do
         debug_log "Processing domain: $domain" | ts '%Y-%m-%d %H:%M:%S'
         {
+            echo "[acme] HAPROXY_CERTS_DIR is set to: ${HAPROXY_CERTS_DIR}" | ts '%Y-%m-%d %H:%M:%S'
             if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
                 debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
 
@@ -307,7 +322,11 @@ function check_for_missing_domain_certs() {
                 # Check if certificate exists in ACME directory
                 if [ -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
                     echo "[acme] $domain certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
-                    deploy_cert "$domain" "$hot_update"
+                    if [ "$hot_update" != "no" ]; then
+                        deploy_cert "$domain" "$hot_update"
+                    else
+                        echo "[acme] Hot update is disabled, skipping deployment for $domain" | ts '%Y-%m-%d %H:%M:%S'
+                    fi
                 else
                     echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                     issue_cert "$domain" "$hot_update"
@@ -584,5 +603,6 @@ add_domain_to_haproxy() {
     fi
 
     echo "[acme] Successfully verified domain(s) in stick table" | ts '%Y-%m-%d %H:%M:%S'
+    sleep 2
     return 0
 }

@@ -202,7 +202,7 @@ frontend http
 
     # Extract the token from the path
     http-request set-var(txn.acme_token) path,field(4,/) if is_acme_challenge
-    http-request set-var(txn.acme_domain) hdr(host),sub(31) if is_acme_challenge
+    http-request set-var(txn.acme_domain) hdr(host),sub(31)
 
     # Define a simple stick table to track domains
     stick-table type string size 1m expire 300s

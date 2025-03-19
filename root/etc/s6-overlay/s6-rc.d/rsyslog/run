@@ -1,6 +1,14 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+HAPROXY_PID_FILE="/var/run/haproxy/haproxy.pid"
+HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
+
+# Wait for HAProxy to be fully started by checking for its PID file and socket
+while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
+    sleep 5
+done
+
 echo "[rsyslogd] starting.." | ts '%Y-%m-%d %H:%M:%S'
 
 # Run rsyslog as root since it needs to create system sockets
