@@ -132,22 +132,79 @@ register_acme() {
 add_challenge_token() {
     local ACME_OUTPUT="$1"
     local CHALLENGE_TOKEN
+    local SOCAT_SOCKET="/var/lib/haproxy/admin.sock"
 
+    echo "[acme] Attempting to extract challenge token from ACME output..." | ts '%Y-%m-%d %H:%M:%S'
+    
+    # Method 1: Look for token='...' format
     CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'token='"'"'[^'"'"']*'"'"'' | cut -d"'" -f2)
-    if [ -z "$CHALLENGE_TOKEN" ]; then
-        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'Using challenge: http-01.*' | grep -o '[A-Za-z0-9_-]\{43\}')
+    if [ -n "$CHALLENGE_TOKEN" ]; then
+        echo "[acme] Found token using method 1 (token='...' format)" | ts '%Y-%m-%d %H:%M:%S'
     fi
 
+    # Method 2: Look for token in Using challenge: http-01... format
+    if [ -z "$CHALLENGE_TOKEN" ]; then
+        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'Using challenge: http-01.*' | grep -o '[A-Za-z0-9_-]\{43\}')
+        if [ -n "$CHALLENGE_TOKEN" ]; then
+            echo "[acme] Found token using method 2 (Using challenge format)" | ts '%Y-%m-%d %H:%M:%S'
+        fi
+    fi
+
+    # Method 3: Look for token in JSON format
     if [ -z "$CHALLENGE_TOKEN" ]; then
         CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+        if [ -n "$CHALLENGE_TOKEN" ]; then
+            echo "[acme] Found token using method 3 (JSON format)" | ts '%Y-%m-%d %H:%M:%S'
+        fi
+    fi
+
+    # Method 4: Look for token in raw output
+    if [ -z "$CHALLENGE_TOKEN" ]; then
+        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o '[A-Za-z0-9_-]\{43\}' | head -n1)
+        if [ -n "$CHALLENGE_TOKEN" ]; then
+            echo "[acme] Found token using method 4 (raw output)" | ts '%Y-%m-%d %H:%M:%S'
+        fi
     fi
 
     if [ -n "$CHALLENGE_TOKEN" ]; then
-        echo "set table http key ${CHALLENGE_TOKEN}" | socat - "unix-connect:/var/lib/haproxy/admin.sock"
-        echo "[acme] Added token to HAProxy stick table: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Full extracted token: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Token length: ${#CHALLENGE_TOKEN} characters" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Truncated token (32 chars): ${CHALLENGE_TOKEN:0:32}" | ts '%Y-%m-%d %H:%M:%S'
+        
+        # Clear existing table first
+        echo "[acme] Clearing existing stick table..." | ts '%Y-%m-%d %H:%M:%S'
+        echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null
+        
+        # Add new token with debug logging
+        echo "[acme] Adding token to HAProxy stick table..." | ts '%Y-%m-%d %H:%M:%S'
+        
+        # Use set table command for HAProxy 3.1.0 - truncate to 31 chars to match HAProxy behavior
+        if ! echo "set table http key ${CHALLENGE_TOKEN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+            echo "[acme] ERROR: Failed to add token to stick table" | ts '%Y-%m-%d %H:%M:%S'
+            return 1
+        fi
+
+        # Verify token was added
+        echo "[acme] Verifying token in stick table..." | ts '%Y-%m-%d %H:%M:%S'
+        local table_content
+        table_content=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
+        echo "$table_content"
+        
+        # Check if token exists in table (without key= prefix) - use 31 chars to match HAProxy
+        if ! echo "$table_content" | grep -q "${CHALLENGE_TOKEN:0:31}"; then
+            echo "[acme] ERROR: Token not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
+            echo "[acme] Expected token: ${CHALLENGE_TOKEN:0:31}" | ts '%Y-%m-%d %H:%M:%S'
+            echo "[acme] Table content:" | ts '%Y-%m-%d %H:%M:%S'
+            echo "$table_content" | ts '%Y-%m-%d %H:%M:%S'
+            return 1
+        fi
+
+        echo "[acme] Successfully verified token in stick table" | ts '%Y-%m-%d %H:%M:%S'
         return 0
     else
-        echo "[acme] Warning: Failed to extract challenge token" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Warning: Failed to extract challenge token from ACME output" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] ACME output for debugging:" | ts '%Y-%m-%d %H:%M:%S'
+        echo "$ACME_OUTPUT" | ts '%Y-%m-%d %H:%M:%S'
         return 1
     fi
 }
@@ -174,7 +231,11 @@ issue_cert() {
             --debug \
             --log-level 3 2>&1)
         
-        add_challenge_token "$ACME_OUTPUT"
+        if ! add_challenge_token "$ACME_OUTPUT"; then
+            echo "[acme] Failed to add challenge token, aborting certificate issuance" | ts '%Y-%m-%d %H:%M:%S'
+            release_lock;
+            return 1;
+        fi
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
@@ -189,13 +250,23 @@ issue_cert() {
             };
     fi
 
+    # Check if certificate was issued
+    if [ ! -f "${CERT_HOME}/${1}_ecc/${1}.cer" ]; then
+        echo "[acme] Certificate was not issued for ${1}, skipping deployment" | ts '%Y-%m-%d %H:%M:%S'
+        release_lock;
+        return 1;
+    fi
+
     release_lock;
     deploy_cert "${1}" "${hot_update}";
 }
 
 deploy_cert() {
     local hot_update=${2:-"yes"}
-    echo "[acme] Deploying ssl certificate for: ${1}" | ts '%Y-%m-%d %H:%M:%S';
+    local domain="${1}"
+    local cert_path="/etc/haproxy/certs/${domain}.pem"
+    
+    echo "[acme] Deploying ssl certificate for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
 
     {
         # Change to acme.sh directory first
@@ -203,15 +274,20 @@ deploy_cert() {
 
         source "$HOME_DIR/acme.sh.env";
         DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
-            --deploy -d "${1}" \
+            --deploy -d "${domain}" \
             --deploy-hook haproxy;
 
-        echo "[acme] Certificate successfully deployed for:${1}" | ts '%Y-%m-%d %H:%M:%S';
+        # Verify certificate exists and is valid
+        if [ -f "$cert_path" ] && openssl x509 -in "$cert_path" -noout -checkend 0 >/dev/null 2>&1; then
+            echo "[acme] Certificate successfully deployed and validated for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
+        else
+            echo "[acme] Warning: Certificate deployment completed but validation failed for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
+        fi
     } || {
-        echo "[acme] Certificate failed to deploy for:${1}, check your DNS!" | ts '%Y-%m-%d %H:%M:%S';
+        echo "[acme] Certificate failed to deploy for: ${domain}, check your DNS!" | ts '%Y-%m-%d %H:%M:%S';
         # remove the empty file
-        if [ -f "/etc/haproxy/certs/${1}.pem" ]; then
-            rm -f "/etc/haproxy/certs/${1}.pem"
+        if [ -f "$cert_path" ]; then
+            rm -f "$cert_path"
         fi
     }
 }
@@ -235,8 +311,21 @@ renew_cert() {
         -d "${domain}" \
         --debug \
         --log-level 3 2>&1)
-    
-    add_challenge_token "$ACME_OUTPUT"
+
+    debug_log "$ACME_OUTPUT"
+
+    if ! add_challenge_token "$ACME_OUTPUT"; then
+        echo "[acme] Failed to add challenge token, aborting certificate renewal" | ts '%Y-%m-%d %H:%M:%S'
+        release_lock;
+        return 1;
+    fi
+
+    # Check if certificate was renewed
+    if [ ! -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
+        echo "[acme] Certificate was not renewed for ${domain}, skipping deployment" | ts '%Y-%m-%d %H:%M:%S'
+        release_lock;
+        return 1;
+    fi
     
     release_lock;
     deploy_cert "${domain}" "${hot_update}";
