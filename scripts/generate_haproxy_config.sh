@@ -213,14 +213,11 @@ frontend http
     # Return the response with the ACCOUNT_THUMBPRINT
     http-request return status 200 content-type text/plain string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge valid_acme_token
     
+    # Proxy headers
+    http-request    set-header X-Forwarded-Proto http if !is_acme_challenge
+
     # Only redirect non-ACME traffic to HTTPS
     http-request redirect scheme https if !is_acme_challenge
-
-    # Proxy headers
-    acl https ssl_fc
-    http-request    set-header X-Forwarded-Proto http if !https
-    http-response   set-header alt-svc "h3=":443"; ma=86400, h3-29=":443"; ma=3600" if !https
-    http-request    set-header	X-Forwarded-Proto https if https
 
     # Placed by yaml frontend http:
     # [HTTP-FRONTEND PLACEHOLDER]
