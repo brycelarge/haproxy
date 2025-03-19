@@ -3,17 +3,23 @@ set -e
 
 # Default settings
 INCLUDE_DEV=false
+UPDATE_GITHUB=false
 GITHUB_API="https://api.github.com"
 GITHUB_REPO="haproxy/haproxy"
+VERSION_CACHE_FILE="/tmp/haproxy_version_cache"
+VERSION_CACHE_TTL=86400  # 24 hours in seconds
 
 # Enable debug logging
 export HA_DEBUG=true
 
 # Parse command line arguments
-while getopts "d" opt; do
+while getopts "du" opt; do
     case $opt in
         d)
             INCLUDE_DEV=true
+            ;;
+        u)
+            UPDATE_GITHUB=true
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -38,12 +44,39 @@ version_gt() {
     test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"
 }
 
+check_version_cache() {
+    local branch="$1"
+    local current_time
+    local cache_time
+    local cached_version
+    
+    if [ -f "$VERSION_CACHE_FILE" ]; then
+        current_time=$(date +%s)
+        cache_time=$(stat -f %m "$VERSION_CACHE_FILE")
+        if [ $((current_time - cache_time)) -lt "$VERSION_CACHE_TTL" ] && [ "$UPDATE_GITHUB" = "false" ]; then
+            cached_version=$(cat "$VERSION_CACHE_FILE")
+            if [ -n "$cached_version" ]; then
+                log "Using cached version: $cached_version"
+                echo "$cached_version"
+                return 0
+            fi
+        fi
+    fi
+    return 1
+}
+
 get_latest_release() {
     local response
     local releases
     local version
     local branch="$1"
     local current_major="${branch%.*}"
+    
+    # Check cache first
+    if cached_version=$(check_version_cache "$branch"); then
+        echo "$cached_version"
+        return 0
+    fi
     
     log "Fetching releases from GitHub..."
     # Include pre-releases with the ?per_page=100 parameter to get more results
@@ -130,6 +163,9 @@ get_latest_release() {
         log "Error: Could not find any valid versions"
         exit 1
     fi
+    
+    # Cache the version
+    echo "$version" > "$VERSION_CACHE_FILE"
     
     echo "$version"
 }
