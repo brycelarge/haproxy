@@ -82,7 +82,6 @@ export LE_CONFIG_HOME=/config/acme
 export CERT_HOME=/config/acme/certs
 
 # Debug and logging
-export DEBUG=\${DEBUG:-1}
 export LOG_LEVEL=\${LOG_LEVEL:-2}
 
 # ACME server settings
@@ -129,86 +128,6 @@ register_acme() {
     setup_acme_renewal
 }
 
-add_challenge_token() {
-    local ACME_OUTPUT="$1"
-    local CHALLENGE_TOKEN
-    local SOCAT_SOCKET="/var/lib/haproxy/admin.sock"
-
-    echo "[acme] Attempting to extract challenge token from ACME output..." | ts '%Y-%m-%d %H:%M:%S'
-    
-    # Method 1: Look for token='...' format
-    CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'token='"'"'[^'"'"']*'"'"'' | cut -d"'" -f2)
-    if [ -n "$CHALLENGE_TOKEN" ]; then
-        echo "[acme] Found token using method 1 (token='...' format)" | ts '%Y-%m-%d %H:%M:%S'
-    fi
-
-    # Method 2: Look for token in Using challenge: http-01... format
-    if [ -z "$CHALLENGE_TOKEN" ]; then
-        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o 'Using challenge: http-01.*' | grep -o '[A-Za-z0-9_-]\{43\}')
-        if [ -n "$CHALLENGE_TOKEN" ]; then
-            echo "[acme] Found token using method 2 (Using challenge format)" | ts '%Y-%m-%d %H:%M:%S'
-        fi
-    fi
-
-    # Method 3: Look for token in JSON format
-    if [ -z "$CHALLENGE_TOKEN" ]; then
-        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-        if [ -n "$CHALLENGE_TOKEN" ]; then
-            echo "[acme] Found token using method 3 (JSON format)" | ts '%Y-%m-%d %H:%M:%S'
-        fi
-    fi
-
-    # Method 4: Look for token in raw output
-    if [ -z "$CHALLENGE_TOKEN" ]; then
-        CHALLENGE_TOKEN=$(echo "$ACME_OUTPUT" | grep -o '[A-Za-z0-9_-]\{43\}' | head -n1)
-        if [ -n "$CHALLENGE_TOKEN" ]; then
-            echo "[acme] Found token using method 4 (raw output)" | ts '%Y-%m-%d %H:%M:%S'
-        fi
-    fi
-
-    if [ -n "$CHALLENGE_TOKEN" ]; then
-        echo "[acme] Full extracted token: $CHALLENGE_TOKEN" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] Token length: ${#CHALLENGE_TOKEN} characters" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] Truncated token (32 chars): ${CHALLENGE_TOKEN:0:32}" | ts '%Y-%m-%d %H:%M:%S'
-        
-        # Clear existing table first
-        echo "[acme] Clearing existing stick table..." | ts '%Y-%m-%d %H:%M:%S'
-        echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null
-        
-        # Add new token with debug logging
-        echo "[acme] Adding token to HAProxy stick table..." | ts '%Y-%m-%d %H:%M:%S'
-        
-        # Use set table command for HAProxy 3.1.0 - truncate to 31 chars to match HAProxy behavior
-        if ! echo "set table http key ${CHALLENGE_TOKEN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
-            echo "[acme] ERROR: Failed to add token to stick table" | ts '%Y-%m-%d %H:%M:%S'
-            return 1
-        fi
-
-        # Verify token was added
-        echo "[acme] Verifying token in stick table..." | ts '%Y-%m-%d %H:%M:%S'
-        local table_content
-        table_content=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
-        echo "$table_content"
-        
-        # Check if token exists in table (without key= prefix) - use 31 chars to match HAProxy
-        if ! echo "$table_content" | grep -q "${CHALLENGE_TOKEN:0:31}"; then
-            echo "[acme] ERROR: Token not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
-            echo "[acme] Expected token: ${CHALLENGE_TOKEN:0:31}" | ts '%Y-%m-%d %H:%M:%S'
-            echo "[acme] Table content:" | ts '%Y-%m-%d %H:%M:%S'
-            echo "$table_content" | ts '%Y-%m-%d %H:%M:%S'
-            return 1
-        fi
-
-        echo "[acme] Successfully verified token in stick table" | ts '%Y-%m-%d %H:%M:%S'
-        return 0
-    else
-        echo "[acme] Warning: Failed to extract challenge token from ACME output" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] ACME output for debugging:" | ts '%Y-%m-%d %H:%M:%S'
-        echo "$ACME_OUTPUT" | ts '%Y-%m-%d %H:%M:%S'
-        return 1
-    fi
-}
-
 issue_cert() {
     if ! acquire_lock; then
         return 1
@@ -222,28 +141,20 @@ issue_cert() {
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
         echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
-        
-        # Run acme.sh with consistent debug flags
+        add_domain_to_haproxy "$1"
+
         ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --stateless \
             -d "${1}" \
             --debug \
-            --log-level 3 2>&1)
-        
-        if ! add_challenge_token "$ACME_OUTPUT"; then
-            echo "[acme] Failed to add challenge token, aborting certificate issuance" | ts '%Y-%m-%d %H:%M:%S'
-            release_lock;
-            return 1;
-        fi
+            2>&1)
+
+        debug_log "$ACME_OUTPUT"
     else
         echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
         s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
-            --stateless \
             --dns dns_cf \
-            --debug \
-            --log-level 3 \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -265,7 +176,7 @@ deploy_cert() {
     local hot_update=${2:-"yes"}
     local domain="${1}"
     local cert_path="/etc/haproxy/certs/${domain}.pem"
-    
+
     echo "[acme] Deploying ssl certificate for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
 
     {
@@ -302,20 +213,29 @@ renew_cert() {
     local domain="${1}"
 
     source "$HOME_DIR/acme.sh.env";
-    
+
     echo "[acme] Running renewal for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
-    
-    # Use same debug flags as issue_cert
+    add_domain_to_haproxy "$domain"
+
     ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
         --renew \
         -d "${domain}" \
         --debug \
-        --log-level 3 2>&1)
+        2>&1)
 
     debug_log "$ACME_OUTPUT"
 
-    if ! add_challenge_token "$ACME_OUTPUT"; then
-        echo "[acme] Failed to add challenge token, aborting certificate renewal" | ts '%Y-%m-%d %H:%M:%S'
+    # Check if renewal was successful
+    if echo "$ACME_OUTPUT" | grep -q "Skip, Next renewal time is:"; then
+        echo "[acme] Certificate for ${domain} is not due for renewal yet" | ts '%Y-%m-%d %H:%M:%S'
+        release_lock;
+        return 0;
+    fi
+
+    if echo "$ACME_OUTPUT" | grep -q "Error"; then
+        echo "[acme] Certificate renewal failed for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] ACME output:" | ts '%Y-%m-%d %H:%M:%S'
+        echo "$ACME_OUTPUT" | ts '%Y-%m-%d %H:%M:%S'
         release_lock;
         return 1;
     fi
@@ -326,7 +246,7 @@ renew_cert() {
         release_lock;
         return 1;
     fi
-    
+
     release_lock;
     deploy_cert "${domain}" "${hot_update}";
 }
@@ -343,7 +263,7 @@ function check_for_missing_domain_certs() {
     # Wait for HAProxy to fully initialize
     echo "[acme] Waiting for HAProxy to fully initialize before processing certificates..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 10
-    
+
     # Verify HAProxy is running by checking the socket
     if [ -S "/var/lib/haproxy/admin.sock" ]; then
         if ! echo "show info" | socat stdio "unix-connect:/var/lib/haproxy/admin.sock" &>/dev/null; then
@@ -504,16 +424,16 @@ fi
 renew_certificate() {
     local domain="$1"
     log_message "Starting renewal for ${domain}"
-    
-    # Debug output - show environment 
+
+    # Debug output - show environment
     env >> "$LOG_FILE" 2>&1
-    
+
     # Check if acme.sh exists
     if [ ! -f "/config/acme/acme.sh" ]; then
         log_message "Error: acme.sh not found at /config/acme/acme.sh"
         return 1
     fi
-    
+
     # Ensure we have write permissions to cert directories
     if [ ! -w "/config/acme/certs" ] || [ ! -w "/etc/haproxy/certs" ]; then
         log_message "Error: Missing write permissions to certificate directories"
@@ -558,7 +478,7 @@ fi
 
 if [ "$DOMAINS_FOUND" -eq 0 ]; then
     log_message "No domains found for renewal. Checking YAML file."
-    
+
     # If no domains found in certs directory, try to get domains from yaml
     if [ -f "/config/haproxy.yaml" ]; then
         if command -v yq &> /dev/null; then
@@ -588,10 +508,10 @@ EOF
 
     # Instead of using crontab, we'll create a direct cron entry in /etc/cron.d
     echo "[acme] Creating renewal job in /etc/cron.d" | ts '%Y-%m-%d %H:%M:%S'
-    
+
     # Create the cron.d directory if it doesn't exist
     mkdir -p /etc/cron.d
-    
+
     # Create the cron file in /etc/cron.d with proper ownership
     cat << EOF > /etc/cron.d/acme-renewal
 # Run certificate renewal at 2:30 AM on Monday and Thursday
@@ -600,13 +520,69 @@ EOF
 
     # Make sure cron file has correct permissions
     chmod 0644 /etc/cron.d/acme-renewal
-    
+
     echo "[acme] Cron job set up successfully" | ts '%Y-%m-%d %H:%M:%S'
     echo "[acme] Renewal schedule: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
 
     # Show the current cron configuration
-    if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
+    if [ "${DEBUG}" == "true" ]; then
         debug_log "Current cron configuration:"
         cat /etc/cron.d/acme-renewal
     fi
+}
+
+# Add a new function to add the domain to the HAProxy stick table
+add_domain_to_haproxy() {
+    local DOMAIN="$1"
+    local SOCAT_SOCKET="/var/lib/haproxy/admin.sock"
+
+    if [ -z "$DOMAIN" ]; then
+        echo "[acme] No domain provided" | ts '%Y-%m-%d %H:%M:%S'
+        return 1
+    fi
+
+    # Check if socket exists
+    if [ ! -S "$SOCAT_SOCKET" ]; then
+        echo "[acme] HAProxy socket not found" | ts '%Y-%m-%d %H:%M:%S'
+        return 1
+    fi
+
+    # Clear existing entries in the stick table
+    echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null
+
+    # Add the full domain to the stick table
+    if ! echo "set table http key ${DOMAIN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+        echo "[acme] ERROR: Failed to add domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
+        return 1
+    fi
+
+    # Extract and add the main domain as well (assuming domain format is subdomain.domain.tld)
+    local MAIN_DOMAIN
+    # Extract domain without the first subdomain part - handles domains with multiple levels correctly
+    if [[ "$DOMAIN" == *"."*"."* ]]; then
+        # Domain has at least one subdomain, remove the first part
+        MAIN_DOMAIN=$(echo "$DOMAIN" | cut -d. -f2-)
+        if ! echo "set table http key ${MAIN_DOMAIN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+            echo "[acme] Warning: Failed to add main domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
+            # Don't return error here to avoid failing the entire process
+        fi
+    fi
+
+    # Verify domains were added
+    echo "[acme] Verifying domains in stick table..." | ts '%Y-%m-%d %H:%M:%S'
+    local table_content
+    table_content=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
+    echo "$table_content"
+
+    # Check if full domain exists in table
+    if ! echo "$table_content" | grep -q "${DOMAIN:0:31}"; then
+        echo "[acme] ERROR: domain not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Expected domain: ${DOMAIN:0:31}" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Table content:" | ts '%Y-%m-%d %H:%M:%S'
+        echo "$table_content" | ts '%Y-%m-%d %H:%M:%S'
+        return 1
+    fi
+
+    echo "[acme] Successfully verified domain(s) in stick table" | ts '%Y-%m-%d %H:%M:%S'
+    return 0
 }

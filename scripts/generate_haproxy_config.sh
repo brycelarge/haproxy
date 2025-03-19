@@ -199,20 +199,21 @@ frontend http
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
-    
-    # Extract the token from the path
-    http-request set-var(txn.acme_token) path,field(3,/),sub(31) if is_acme_challenge
 
-    # Define a simple stick table to track tokens
+    # Extract the token from the path
+    http-request set-var(txn.acme_token) path,field(4,/) if is_acme_challenge
+    http-request set-var(txn.acme_domain) hdr(host),sub(31) if is_acme_challenge
+
+    # Define a simple stick table to track domains
     stick-table type string size 1m expire 300s
-   
-    # Only return responses for tokens that were tracked in the stick table
-    # This is checked in a separate script that adds the tokens when acme.sh runs
-    acl valid_acme_token var(txn.acme_token) -m found
+
+    # Only return responses for domains that were tracked in the stick table
+    # This is checked in a separate script that adds the domains when acme.sh runs
+    acl valid_acme_domain var(txn.acme_domain) -m found
 
     # Return the response with the ACCOUNT_THUMBPRINT
-    http-request return status 200 content-type text/plain string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge valid_acme_token
-    
+    http-request return status 200 content-type text/plain lf-string "%[var(txn.acme_token)].${ACCOUNT_THUMBPRINT}" if is_acme_challenge valid_acme_domain
+
     # Proxy headers
     http-request    set-header X-Forwarded-Proto http if !is_acme_challenge
 
