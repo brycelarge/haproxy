@@ -321,9 +321,7 @@ function check_for_missing_domain_certs() {
                 # Check if certificate exists in ACME directory
                 if [ -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
                     echo "[acme] $domain certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
-                    if [ "$hot_update" != "no" ]; then
-                        deploy_cert "$domain" "$hot_update"
-                    fi
+                    deploy_cert "$domain" "$hot_update"
                 else
                     echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                     issue_cert "$domain" "$hot_update"
