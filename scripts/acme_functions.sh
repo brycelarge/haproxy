@@ -149,7 +149,7 @@ issue_cert() {
         echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
         add_domain_to_haproxy "$1"
 
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh"
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --issue \
             -d "${1}" \
             ${DEBUG_FLAG} || {
@@ -237,7 +237,7 @@ renew_cert() {
         ${DEBUG_FLAG} \
         2>&1)
 
-    echo "$ACME_OUTPUT"
+    debug_log "$ACME_OUTPUT"
 
     # Check if renewal was successful
     if echo "$ACME_OUTPUT" | grep -q "Skip, Next renewal time is:"; then
@@ -248,8 +248,10 @@ renew_cert() {
 
     if echo "$ACME_OUTPUT" | grep -q "Error"; then
         echo "[acme] Certificate renewal failed for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] ACME output:" | ts '%Y-%m-%d %H:%M:%S'
-        echo "$ACME_OUTPUT" | ts '%Y-%m-%d %H:%M:%S'
+        release_lock;
+        return 1;
+    elif echo "$ACME_OUTPUT" | grep -q "key authorization file from the server did not match this challenge"; then
+        echo "[acme] Certificate renewal failed due to key authorization error for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
         release_lock;
         return 1;
     fi
@@ -586,14 +588,12 @@ add_domain_to_haproxy() {
     echo "[acme] Verifying domains in stick table..." | ts '%Y-%m-%d %H:%M:%S'
     local table_content
     table_content=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
-    echo "$table_content"
+    debug_log "$table_content"
 
     # Check if full domain exists in table
     if ! echo "$table_content" | grep -q "${DOMAIN:0:31}"; then
         echo "[acme] ERROR: domain not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
         echo "[acme] Expected domain: ${DOMAIN:0:31}" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] Table content:" | ts '%Y-%m-%d %H:%M:%S'
-        echo "$table_content" | ts '%Y-%m-%d %H:%M:%S'
         return 1
     fi
 

@@ -194,8 +194,7 @@ frontend http
     bind            ${HAPROXY_BIND_IP}:80
     mode            http
     log             global
-    option          http-keep-alive
-    option          forwardfor
+    option          httplog
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
@@ -205,10 +204,10 @@ frontend http
 
     # Only return responses for domains that were tracked in the stick table
     # This is checked in a separate script that adds the domains when acme.sh runs
-    acl valid_acme_domain hdr(host),sub(31) -m found table http path_beg /.well-known/acme-challenge/
+    acl valid_acme_domain hdr(host),sub(31) -m found table http || hdr(host),field(2,.),sub(31) -m found table http
 
     # Respond 200 for our internal ACME challenges
-    http-request return status 200 content-type text/plain lf-string %[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n if valid_acme_domain
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto http if !is_acme_challenge
@@ -253,6 +252,7 @@ frontend https-offloading-ip-protection
     log             global
     option          http-keep-alive
     option          forwardfor
+    option          httplog
 
     http-request    set-var(txn.txnhost) hdr(host)
 
@@ -300,6 +300,7 @@ frontend https-offloading
     log             global
     option          http-keep-alive
     option          forwardfor
+    option          httplog
 
     # Add proxy protocol handling
     declare capture request len 40
