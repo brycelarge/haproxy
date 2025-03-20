@@ -448,8 +448,8 @@ get_domain_regex() {
         # For base domain only wild card certificates
         echo "^${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
     else
-        # For subdomains
-        echo "^([^\.]*)\.${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
+        # For subdomains - support multiple levels of subdomains
+        echo "^([^\.]+\.)*${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
     fi
 }
 
