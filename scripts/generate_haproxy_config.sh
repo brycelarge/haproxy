@@ -205,13 +205,13 @@ frontend http
 
     # Only return responses for domains that were tracked in the stick table
     # This is checked in a separate script that adds the domains when acme.sh runs
-    acl valid_acme_domain hdr(host),sub(31) -m found
+    acl valid_acme_domain hdr(host),sub(31) -m found table http path_beg /.well-known/acme-challenge/
 
-    # Return the response with the ACCOUNT_THUMBPRINT
-    http-request return status 200 content-type text/plain lf-string %[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n if is_acme_challenge valid_acme_domain
+    # Respond 200 for our internal ACME challenges
+    http-request return status 200 content-type text/plain lf-string %[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n if valid_acme_domain
 
     # Proxy headers
-    http-request    set-header X-Forwarded-Proto http if !is_acme_challenge
+    http-request set-header X-Forwarded-Proto http if !is_acme_challenge
 
     # Only redirect non-ACME traffic to HTTPS
     http-request redirect scheme https if !is_acme_challenge

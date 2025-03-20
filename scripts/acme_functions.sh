@@ -301,7 +301,6 @@ function check_for_missing_domain_certs() {
     for domain in "${domains[@]}"; do
         debug_log "Processing domain: $domain" | ts '%Y-%m-%d %H:%M:%S'
         {
-            echo "[acme] HAPROXY_CERTS_DIR is set to: ${HAPROXY_CERTS_DIR}" | ts '%Y-%m-%d %H:%M:%S'
             if [ -f "${HAPROXY_CERTS_DIR}/${domain}.pem" ]; then
                 debug_log "Certificate for $domain is deployed in haproxy" | ts '%Y-%m-%d %H:%M:%S'
 
@@ -324,8 +323,6 @@ function check_for_missing_domain_certs() {
                     echo "[acme] $domain certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
                     if [ "$hot_update" != "no" ]; then
                         deploy_cert "$domain" "$hot_update"
-                    else
-                        echo "[acme] Hot update is disabled, skipping deployment for $domain" | ts '%Y-%m-%d %H:%M:%S'
                     fi
                 else
                     echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
