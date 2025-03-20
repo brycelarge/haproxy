@@ -134,10 +134,8 @@ issue_cert() {
     fi
 
     trap cleanup EXIT
-    local hot_update=${2:-"yes"}
-    source /config/acme/acme.sh.env;
 
-    echo "[acme] Attempting to issue ${1}" | ts '%Y-%m-%d %H:%M:%S';
+    local hot_update=${2:-"yes"}
 
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
@@ -146,22 +144,24 @@ issue_cert() {
     fi
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
-        echo "[acme] Using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Attempting to issue ${1} using HTTP challenge with standalone mode" | ts '%Y-%m-%d %H:%M:%S'
         add_domain_to_haproxy "$1"
 
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        source "$HOME_DIR/acme.sh.env";
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
             --issue \
-            -d "${1}" \
-            ${DEBUG_FLAG} || {
+            --stateless \
+            -d "${1}" || {
                 release_lock;
                 return 1;
             };
     else
-        echo "[acme] Using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        echo "[acme] Attempting to issue ${1} using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
+
+        source "$HOME_DIR/acme.sh.env";
+        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
             --issue \
             --dns dns_cf \
-            ${DEBUG_FLAG} \
             -d "${1}" || {
                 release_lock;
                 return 1;
@@ -231,11 +231,10 @@ renew_cert() {
         DEBUG_FLAG=""
     fi
 
-    ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+    ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
         --renew \
-        -d "${domain}" \
-        ${DEBUG_FLAG} \
-        2>&1)
+        --stateless \
+        -d "${domain}"2>&1)
 
     debug_log "$ACME_OUTPUT"
 
@@ -482,7 +481,7 @@ renew_certificate() {
 log_message "Scanning for domains that need renewal"
 DOMAINS_FOUND=0
 if [ -d "/config/acme/certs" ]; then
-    find /config/acme/certs -name "*.conf" | grep -v ".csr.conf" | while read -r conf_file; do
+    find /config/acme/certs -name "*.conf" | grefverip -v ".csr.conf" | while read -r conf_file; do
         domain=$(basename "$conf_file" .conf)
         log_message "Found domain: $domain"
         DOMAINS_FOUND=$((DOMAINS_FOUND+1))
