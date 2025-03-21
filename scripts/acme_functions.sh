@@ -140,7 +140,7 @@ issue_cert() {
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
-        DEBUG_FLAG=""
+        DEBUG_FLAG="--quiet"
     fi
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
@@ -189,6 +189,12 @@ deploy_cert() {
     local domain="${1}"
     local cert_path="/etc/haproxy/certs/${domain}.pem"
 
+    if [ "$DEBUG" = "true" ]; then
+        DEBUG_FLAG="--debug"
+    else
+        DEBUG_FLAG="--quiet"
+    fi
+
     echo "[acme] Deploying ssl certificate for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
 
     {
@@ -196,7 +202,7 @@ deploy_cert() {
         cd $HOME_DIR;
 
         source "$HOME_DIR/acme.sh.env";
-        ACME_OUTPUT=$(DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        ACME_OUTPUT=$(DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
             --deploy -d "${domain}" \
             --deploy-hook haproxy 2>&1)
 
@@ -243,13 +249,13 @@ renew_cert() {
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
-        DEBUG_FLAG=""
+        DEBUG_FLAG="--quiet"
     fi
 
     ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
         --renew \
         --stateless \
-        -d "${domain}"2>&1)
+        -d "${domain}" 2>&1)
 
     debug_log "$ACME_OUTPUT"
     release_lock;
