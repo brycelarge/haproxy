@@ -200,14 +200,15 @@ frontend http
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
 
     # Define a simple stick table to track domains
-    stick-table type string size 1m expire 300s
+    stick-table type string len 100 size 1m expire 300s store http_req_cnt
 
     # Only return responses for domains that were tracked in the stick table
     # This is checked in a separate script that adds the domains when acme.sh runs
-    acl valid_acme_domain hdr(host),sub(31) -m found table http || hdr(host),field(2,.),sub(31) -m found table http
+    acl valid_acme_domain hdr(host),field(2,.),table_http_req_cnt(http) gt 0
+    acl valid_acme_sub_domain hdr(host),table_http_req_cnt(http) gt 0
 
     # Respond 200 for our internal ACME challenges
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto http if !is_acme_challenge

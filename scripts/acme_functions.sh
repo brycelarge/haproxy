@@ -565,8 +565,11 @@ add_domain_to_haproxy() {
     # Clear existing entries in the stick table
     echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null
 
-    # Add the full domain to the stick table
-    if ! echo "set table http key ${DOMAIN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+    echo "[acme] Adding domain to stick table: ${DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
+
+    # Add the full domain to the stick table and set counter to 1
+    # Use the correct syntax: set table <table> key <key> [data.<type> <value>]
+    if ! echo "set table http key ${DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
         echo "[acme] ERROR: Failed to add domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
         return 1
     fi
@@ -577,7 +580,9 @@ add_domain_to_haproxy() {
     if [[ "$DOMAIN" == *"."*"."* ]]; then
         # Domain has at least one subdomain, remove the first part
         MAIN_DOMAIN=$(echo "$DOMAIN" | cut -d. -f2-)
-        if ! echo "set table http key ${MAIN_DOMAIN:0:31}" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+        echo "[acme] Adding main domain to stick table: ${MAIN_DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
+
+        if ! echo "set table http key ${MAIN_DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
             echo "[acme] Warning: Failed to add main domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
             # Don't return error here to avoid failing the entire process
         fi
@@ -585,18 +590,16 @@ add_domain_to_haproxy() {
 
     # Verify domains were added
     echo "[acme] Verifying domains in stick table..." | ts '%Y-%m-%d %H:%M:%S'
-    local table_content
-    table_content=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
-    debug_log "$table_content"
-
-    # Check if full domain exists in table
-    if ! echo "$table_content" | grep -q "${DOMAIN:0:31}"; then
+    echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null | grep -E "${DOMAIN}|${MAIN_DOMAIN}" || {
         echo "[acme] ERROR: domain not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] Expected domain: ${DOMAIN:0:31}" | ts '%Y-%m-%d %H:%M:%S'
+        echo "[acme] Expected domain: ${DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
+        # Show full table for debugging
+        echo "[Debug] $(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)"
         return 1
-    fi
+    }
 
     echo "[acme] Successfully verified domain(s) in stick table" | ts '%Y-%m-%d %H:%M:%S'
+
     sleep 2
     return 0
 }
