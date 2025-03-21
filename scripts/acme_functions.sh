@@ -196,16 +196,25 @@ deploy_cert() {
         cd $HOME_DIR;
 
         source "$HOME_DIR/acme.sh.env";
-        DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
+        ACME_OUTPUT=$(DEPLOY_HAPROXY_HOT_UPDATE="$hot_update" s6-setuidgid ${USER} "$HOME_DIR/acme.sh" \
             --deploy -d "${domain}" \
-            --deploy-hook haproxy;
+            --deploy-hook haproxy 2>&1)
+
+        debug_log "$ACME_OUTPUT"
+
+        if ! echo "$ACME_OUTPUT" | grep -q "Success"; then
+            echo "[acme] Certificate deployment failed for: ${domain}" | ts '%Y-%m-%d %H:%M:%S'
+            return 1
+        fi
 
         # Verify certificate exists and is valid
         if [ -f "$cert_path" ] && openssl x509 -in "$cert_path" -noout -checkend 0 >/dev/null 2>&1; then
-            echo "[acme] Certificate successfully deployed and validated for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
+            echo "[acme] Certificate successfully deployed and validated for: ${domain}" | ts '%Y-%m-%d %H:%M:%S'
             kill -HUP $(pidof rsyslogd)
+            return 0
         else
-            echo "[acme] Warning: Certificate deployment completed but validation failed for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
+            echo "[acme] Warning: Certificate deployment completed but validation failed for: ${domain}" | ts '%Y-%m-%d %H:%M:%S'
+            return 1
         fi
     } || {
         echo "[acme] Certificate failed to deploy for: ${domain}, check your DNS!" | ts '%Y-%m-%d %H:%M:%S';
@@ -213,6 +222,7 @@ deploy_cert() {
         if [ -f "$cert_path" ]; then
             rm -f "$cert_path"
         fi
+        return 1
     }
 }
 
@@ -482,7 +492,7 @@ renew_certificate() {
 log_message "Scanning for domains that need renewal"
 DOMAINS_FOUND=0
 if [ -d "/config/acme/certs" ]; then
-    find /config/acme/certs -name "*.conf" | grefverip -v ".csr.conf" | while read -r conf_file; do
+    find /config/acme/certs -name "*.conf" | grep -v ".csr.conf" | while read -r conf_file; do
         domain=$(basename "$conf_file" .conf)
         log_message "Found domain: $domain"
         DOMAINS_FOUND=$((DOMAINS_FOUND+1))
@@ -564,26 +574,24 @@ add_domain_to_haproxy() {
     fi
 
     # Clear existing entries in the stick table
-    echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null
+    echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" &>/dev/null
 
     echo "[acme] Adding domain to stick table: ${DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
 
     # Add the full domain to the stick table and set counter to 1
     # Use the correct syntax: set table <table> key <key> [data.<type> <value>]
-    if ! echo "set table http key ${DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+    if ! echo "set table http key ${DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" &>/dev/null; then
         echo "[acme] ERROR: Failed to add domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
         return 1
     fi
 
-    # Extract and add the main domain as well (assuming domain format is subdomain.domain.tld)
-    local MAIN_DOMAIN
-    # Extract domain without the first subdomain part - handles domains with multiple levels correctly
+    # Extract domain without the first subdomain part - handles domains with multiple levels
     if [[ "$DOMAIN" == *"."*"."* ]]; then
         # Domain has at least one subdomain, remove the first part
         MAIN_DOMAIN=$(echo "$DOMAIN" | cut -d. -f2-)
         echo "[acme] Adding main domain to stick table: ${MAIN_DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
 
-        if ! echo "set table http key ${MAIN_DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null; then
+        if ! echo "set table http key ${MAIN_DOMAIN} data.http_req_cnt 1" | socat stdio "unix-connect:${SOCAT_SOCKET}" &>/dev/null; then
             echo "[acme] Warning: Failed to add main domain to stick table" | ts '%Y-%m-%d %H:%M:%S'
             # Don't return error here to avoid failing the entire process
         fi
@@ -591,11 +599,12 @@ add_domain_to_haproxy() {
 
     # Verify domains were added
     echo "[acme] Verifying domains in stick table..." | ts '%Y-%m-%d %H:%M:%S'
-    echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null | grep -E "${DOMAIN}|${MAIN_DOMAIN}" || {
+    TABLE_CONTENTS=$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)
+    if ! echo "$TABLE_CONTENTS" | grep -q -E "${DOMAIN}|${MAIN_DOMAIN}"; then
         echo "[acme] ERROR: domain ${DOMAIN} not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
-        debug_log "$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)"
+        debug_log "$TABLE_CONTENTS"
         return 1
-    }
+    fi
 
     echo "[acme] Successfully verified domain(s) in stick table" | ts '%Y-%m-%d %H:%M:%S'
 
