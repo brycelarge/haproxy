@@ -592,10 +592,8 @@ add_domain_to_haproxy() {
     # Verify domains were added
     echo "[acme] Verifying domains in stick table..." | ts '%Y-%m-%d %H:%M:%S'
     echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null | grep -E "${DOMAIN}|${MAIN_DOMAIN}" || {
-        echo "[acme] ERROR: domain not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
-        echo "[acme] Expected domain: ${DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
-        # Show full table for debugging
-        echo "[Debug] $(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)"
+        echo "[acme] ERROR: domain ${DOMAIN} not found in stick table after adding" | ts '%Y-%m-%d %H:%M:%S'
+        debug_log "$(echo "show table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" 2>/dev/null)"
         return 1
     }
 
