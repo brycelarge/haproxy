@@ -189,6 +189,12 @@ cache my-cache
 
 EOF
 
+MIXED_MODE_404_RESPONSE=""
+if [ "${MIXED_SSL_MODE}" = "true" ]; then
+    MIXED_MODE_404_RESPONSE="# Respond 404 if not valid domain and not in mixed mode
+    http-request return status 404 if is_acme_challenge !valid_acme_domain !valid_acme_sub_domain"
+fi
+
 cat <<EOF >> "$HAPROXY_CFG"
 frontend http
     bind            ${HAPROXY_BIND_IP}:80
@@ -209,6 +215,8 @@ frontend http
 
     # Respond 200 for our internal ACME challenges
     http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
+
+    ${MIXED_MODE_404_RESPONSE}
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto http if !is_acme_challenge
