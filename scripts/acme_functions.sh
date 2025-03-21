@@ -148,34 +148,39 @@ issue_cert() {
         add_domain_to_haproxy "$1"
 
         source "$HOME_DIR/acme.sh.env";
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
+        ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
             --issue \
             --stateless \
-            -d "${1}" || {
-                release_lock;
-                return 1;
-            };
+            -d "${1}" 2>&1)
+
+        debug_log "$ACME_OUTPUT"
+        release_lock;
+
+        if echo "$ACME_OUTPUT" | grep -q "Error"; then
+            echo "[acme] Certificate issuance failed for ${1}" | ts '%Y-%m-%d %H:%M:%S'
+            return 1;
+        elif echo "$ACME_OUTPUT" | grep -q "key authorization file from the server did not match this challenge"; then
+            echo "[acme] Certificate issuance failed due to key authorization error for ${1}" | ts '%Y-%m-%d %H:%M:%S'
+            return 1;
+        fi
     else
         echo "[acme] Attempting to issue ${1} using DNS challenge (Cloudflare)" | ts '%Y-%m-%d %H:%M:%S';
 
         source "$HOME_DIR/acme.sh.env";
-        s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
+        ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
             --issue \
             --dns dns_cf \
-            -d "${1}" || {
-                release_lock;
-                return 1;
-            };
-    fi
+            -d "${1}" 2>&1)
 
-    # Check if certificate was issued
-    if [ ! -f "${CERT_HOME}/${1}_ecc/${1}.cer" ]; then
-        echo "[acme] Certificate was not issued for ${1}, skipping deployment" | ts '%Y-%m-%d %H:%M:%S'
+        debug_log "$ACME_OUTPUT"
         release_lock;
-        return 1;
+
+        if echo "$ACME_OUTPUT" | grep -q "Error"; then
+            echo "[acme] Certificate issuance failed for ${1}" | ts '%Y-%m-%d %H:%M:%S'
+            return 1;
+        fi
     fi
 
-    release_lock;
     deploy_cert "${1}" "${hot_update}";
 }
 
@@ -237,32 +242,28 @@ renew_cert() {
         -d "${domain}"2>&1)
 
     debug_log "$ACME_OUTPUT"
+    release_lock;
 
     # Check if renewal was successful
     if echo "$ACME_OUTPUT" | grep -q "Skip, Next renewal time is:"; then
         echo "[acme] Certificate for ${domain} is not due for renewal yet" | ts '%Y-%m-%d %H:%M:%S'
-        release_lock;
         return 0;
     fi
 
     if echo "$ACME_OUTPUT" | grep -q "Error"; then
         echo "[acme] Certificate renewal failed for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
-        release_lock;
         return 1;
     elif echo "$ACME_OUTPUT" | grep -q "key authorization file from the server did not match this challenge"; then
         echo "[acme] Certificate renewal failed due to key authorization error for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
-        release_lock;
         return 1;
     fi
 
     # Check if certificate was renewed
     if [ ! -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
         echo "[acme] Certificate was not renewed for ${domain}, skipping deployment" | ts '%Y-%m-%d %H:%M:%S'
-        release_lock;
         return 1;
     fi
 
-    release_lock;
     deploy_cert "${domain}" "${hot_update}";
 }
 
