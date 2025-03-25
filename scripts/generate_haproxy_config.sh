@@ -74,6 +74,12 @@ else
     ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}"
 fi
 
+if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
+    PIDFILE="pidfile /var/run/haproxy/haproxy.pid"
+else
+    PIDFILE=""
+fi
+
 cat <<EOF >> "$HAPROXY_CFG"
 global
     maxconn 4096
@@ -92,8 +98,7 @@ global
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
 
-    # Core HAProxy settings
-    pidfile /var/run/haproxy/haproxy.pid
+    ${PIDFILE}
 
     # [GLOBALS PLACEHOLDER]
 
