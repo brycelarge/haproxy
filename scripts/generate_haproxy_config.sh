@@ -219,7 +219,7 @@ frontend http
     acl valid_acme_sub_domain hdr(host),table_http_req_cnt(http) gt 0
 
     # Respond 200 for our internal ACME challenges
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
+    http-request return status 200 content-type text/plain lf-string "%[path,regsub(^/.well-known/acme-challenge/,)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
 
     ${MIXED_MODE_404_RESPONSE}
 
