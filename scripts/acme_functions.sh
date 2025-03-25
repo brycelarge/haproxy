@@ -140,7 +140,7 @@ issue_cert() {
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
-        DEBUG_FLAG="--quiet"
+        DEBUG_FLAG=""
     fi
 
     if [ "$ACME_CHALLENGE_TYPE" = "http" ]; then
@@ -192,7 +192,7 @@ deploy_cert() {
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
-        DEBUG_FLAG="--quiet"
+        DEBUG_FLAG=""
     fi
 
     echo "[acme] Deploying ssl certificate for: ${domain}" | ts '%Y-%m-%d %H:%M:%S';
@@ -249,7 +249,7 @@ renew_cert() {
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
-        DEBUG_FLAG="--quiet"
+        DEBUG_FLAG=""
     fi
 
     ACME_OUTPUT=$(s6-setuidgid ${USER} "$HOME_DIR/acme.sh" ${DEBUG_FLAG} \
@@ -291,6 +291,7 @@ extract_domains() {
 function check_for_missing_domain_certs() {
     # Should we reload haproxy
     local hot_update=${1:-"yes"}
+    local certs_updated=false
 
     # Wait for HAProxy to fully initialize
     echo "[acme] Waiting for HAProxy to fully initialize before processing certificates..." | ts '%Y-%m-%d %H:%M:%S'
@@ -333,16 +334,48 @@ function check_for_missing_domain_certs() {
                 # Add logic to renew if close to expiration
                 if [ "$expiration_seconds" -lt "$thirty_days_from_now" ]; then
                     echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
-                    renew_cert "$domain" "$hot_update"
+                    if renew_cert "$domain" "$hot_update"; then
+                        certs_updated=true
+                    fi
                 fi
             else
                 # Check if certificate exists in ACME directory
                 if [ -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
-                    echo "[acme] $domain certificate exists in acme directory but not deployed, deploying..." | ts '%Y-%m-%d %H:%M:%S'
-                    deploy_cert "$domain" "$hot_update"
+                    echo "[acme] $domain certificate exists in acme directory but not deployed, validating before deployment..." | ts '%Y-%m-%d %H:%M:%S'
+
+                    # Validate the certificate in ACME directory
+                    if [ -f "${CERT_HOME}/${domain}_ecc/${domain}.cer" ]; then
+                        # Check certificate validity
+                        cert_expiration=$(openssl x509 -enddate -noout -in "${CERT_HOME}/${domain}_ecc/${domain}.cer" | cut -d= -f2)
+                        debug_log "$domain ACME certificate expires on: $cert_expiration" | ts '%Y-%m-%d %H:%M:%S'
+
+                        # Convert expiration date to seconds since epoch
+                        cert_expiration_seconds=$(date -d "$cert_expiration" +%s 2>/dev/null || date -D "%b %d %H:%M:%S %Y %Z" -d "$cert_expiration" +%s)
+                        current_time=$(date +%s)
+
+                        # Check if certificate is valid (not expired)
+                        if [ "$cert_expiration_seconds" -gt "$current_time" ]; then
+                            echo "[acme] $domain certificate in acme directory is valid, deploying..." | ts '%Y-%m-%d %H:%M:%S'
+                            if deploy_cert "$domain" "$hot_update"; then
+                                certs_updated=true
+                            fi
+                        else
+                            echo "[acme] $domain certificate in acme directory is expired, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                            if issue_cert "$domain" "$hot_update"; then
+                                certs_updated=true
+                            fi
+                        fi
+                    else
+                        echo "[acme] $domain certificate file not found in expected location, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
+                        if issue_cert "$domain" "$hot_update"; then
+                            certs_updated=true
+                        fi
+                    fi
                 else
                     echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
-                    issue_cert "$domain" "$hot_update"
+                    if issue_cert "$domain" "$hot_update"; then
+                        certs_updated=true
+                    fi
                 fi
             fi
         } || {
@@ -356,6 +389,16 @@ function check_for_missing_domain_certs() {
     if [ ${#FAILED_DOMAINS[@]} -gt 0 ]; then
         echo "[acme] The following domains failed processing:" | ts '%Y-%m-%d %H:%M:%S'
         printf '%s\n' "${FAILED_DOMAINS[@]}" | ts '%Y-%m-%d %H:%M:%S'
+    fi
+
+    # If hot_update is "no" but certificates were updated, reload HAProxy
+    if [ "$hot_update" = "no" ] && [ "$certs_updated" = true ]; then
+        echo "[acme] Certificates were updated and hot_update is disabled, reloading HAProxy..." | ts '%Y-%m-%d %H:%M:%S'
+        if [ -f "/scripts/reload-haproxy.sh" ]; then
+            /scripts/reload-haproxy.sh
+        else
+            echo "[acme] Error: reload-haproxy.sh script not found" | ts '%Y-%m-%d %H:%M:%S'
+        fi
     fi
 }
 
