@@ -195,7 +195,7 @@ cache my-cache
 EOF
 
 MIXED_MODE_404_RESPONSE=""
-if [ "${MIXED_SSL_MODE}" = "true" ]; then
+if [ "${MIXED_SSL_MODE}" != "true" ]; then
     MIXED_MODE_404_RESPONSE="# Respond 404 if not valid domain and not in mixed mode
     http-request return status 404 if is_acme_challenge !valid_acme_domain !valid_acme_sub_domain"
 fi
