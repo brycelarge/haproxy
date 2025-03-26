@@ -196,7 +196,8 @@ EOF
 
 MIXED_MODE_404_RESPONSE=""
 if [ "${MIXED_SSL_MODE}" != "true" ]; then
-    MIXED_MODE_404_RESPONSE="# Respond 404 if not valid domain and not in mixed mode
+    MIXED_MODE_404_RESPONSE="
+    # Respond 404 if not valid domain and not in mixed mode
     http-request return status 404 if is_acme_challenge !valid_acme_domain !valid_acme_sub_domain"
 fi
 
@@ -206,6 +207,8 @@ frontend http
     mode            http
     log             global
     option          httplog
+	option			http-keep-alive
+	option			forwardfor
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
@@ -220,7 +223,6 @@ frontend http
 
     # Respond 200 for our internal ACME challenges
     http-request return status 200 content-type text/plain lf-string "%[path,regsub(^/.well-known/acme-challenge/,)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
-
     ${MIXED_MODE_404_RESPONSE}
 
     # Proxy headers
