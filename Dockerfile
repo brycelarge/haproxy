@@ -28,30 +28,26 @@ ENV HAPROXY_BRANCH=3.1 \
     HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
-    # Core functionality
+    # Core functionality - essential options
     USE_GETADDRINFO=1 \
-    USE_ACCEPT4=1 \
-    USE_LINUX_TPROXY=1 \
     USE_THREAD=1 \
-    USE_CPU_AFFINITY=1 \
-    # SSL/TLS & QUIC
+    # SSL/TLS & QUIC - needed for HTTPS
     USE_OPENSSL=1 \
     USE_QUIC=1 \
     SSL_INC=/opt/quictls/include \
     SSL_LIB=/opt/quictls/lib \
-    # Performance
-    USE_NS=1 \
+    # Performance - most important options
     USE_TFO=1 \
-    USE_LINUX_SPLICE=1 \
-    USE_NETFILTER=1 \
-    # Other haproxy options
-    USE_SLZ=1 \
-    USE_PCRE2=1 \
-    USE_PCRE2_JIT=1 \
+    # Lua for ACME HTTP-01 challenge
     USE_LUA=1 \
     LUA_INC=/usr/include/lua5.4 \
     LUA_LIB=/usr/lib/lua5.4 \
+    # Prometheus metrics
     USE_PROMEX=1 \
+    # PCRE2 for regex support
+    USE_PCRE2=1 \
+    USE_PCRE2_JIT=1 \
+    # Link flags
     LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
     EXTRA_OBJS='
 
