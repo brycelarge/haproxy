@@ -1,4 +1,4 @@
-FROM alpine:3.20 AS openssl-builder
+FROM alpine:3.21 AS openssl-builder
 
 ENV OPENSSL_URL=https://github.com/quictls/openssl/archive/refs/tags/openssl-3.1.7-quic1.tar.gz
 
@@ -18,10 +18,15 @@ RUN \
     rm -rf /opt/quictls/ssl/certs && \
     ln -s /etc/ssl/certs /opt/quictls/ssl/certs
 
-FROM alpine:3.20 AS haproxy-builder
+FROM alpine:3.21 AS haproxy-builder
 COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
+ARG HAPROXY_BRANCH=3.1 \
+ARG HAPROXY_MINOR=3.1.0 \
+ARG HAPROXY_SHA256=56409bea917ae89fab663cdff5d0935b455611d59227a217c237b67050a12cea \
+
+# Set ENV variables from ARGs for use in RUN commands
 ENV HAPROXY_BRANCH=3.1 \
     HAPROXY_MINOR=3.1.0 \
     HAPROXY_SHA256=56409bea917ae89fab663cdff5d0935b455611d59227a217c237b67050a12cea \
@@ -85,7 +90,8 @@ RUN \
     make -C /usr/src/haproxy TARGET=linux2628 install-bin install-man
 
 # start from fresh to remove all build layers and packages
-FROM brycelarge/alpine-baseimage:latest
+FROM brycelarge/alpine-baseimage:3.21
+
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
 
@@ -100,6 +106,9 @@ COPY ./conf.d/rsyslog.conf /etc/rsyslog.conf
 COPY ./conf.d/network.conf /etc/sysctl.d/network.conf
 COPY ./scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
 COPY scripts/ /scripts/
+
+# Set timezone environment variable
+ENV TZ=EST
 
 RUN \
     echo "**** Install runtime packages ****" && \
@@ -174,6 +183,12 @@ COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh && \
     chown -R haproxy:haproxy /scripts && \
     chmod 775 /scripts
+
+LABEL maintainer="Bryce Large" \
+      org.opencontainers.image.title="HAProxy with ACME" \
+      org.opencontainers.image.description="HAProxy with Lua ACME HTTP-01 challenge support" \
+      org.opencontainers.image.version="${HAPROXY_MINOR}" \
+      org.opencontainers.image.source="https://github.com/brycelarge/haproxy"
 
 VOLUME ["/config"]
 EXPOSE 80 443 8404

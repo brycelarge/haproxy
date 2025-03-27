@@ -59,18 +59,18 @@ get_cache_key() {
     local branch="$1"
     local dev_flag="stable"
     local version_flag="auto"
-    
+
     # Create a unique cache key based on settings
     if [ "$INCLUDE_DEV" = "true" ]; then
         dev_flag="dev"
     fi
-    
+
     if [ "$USE_VERSION_2" = "true" ]; then
         version_flag="v2"
     elif [ -n "$branch" ]; then
         version_flag="v${branch}"
     fi
-    
+
     echo "${dev_flag}_${version_flag}"
 }
 
@@ -80,14 +80,14 @@ check_version_cache() {
     local cache_time
     local cached_version
     local cache_key
-    
+
     # Create cache directory if it doesn't exist
     mkdir -p "$VERSION_CACHE_DIR"
-    
+
     # Get cache key based on current settings
     cache_key=$(get_cache_key "$branch")
     local cache_file="${VERSION_CACHE_DIR}/${cache_key}"
-    
+
     debug_log "Using cache key: $cache_key"
 
     if [ -f "$cache_file" ]; then
@@ -112,7 +112,7 @@ get_latest_release() {
     local branch="$1"
     local current_major
     local cache_key
-    
+
     # Check cache first
     if cached_version=$(check_version_cache "$branch"); then
         echo "$cached_version"
@@ -146,19 +146,19 @@ get_latest_release() {
         current_major="${branch%.*}"
     else
         # Get all available major versions and use the highest one
-        current_major=$(echo "$response" | 
-                      jq -r '.[].tag_name' | 
-                      grep -v "dev" | 
-                      sed 's/^v//' | 
-                      cut -d'.' -f1 | 
-                      sort -rn | 
+        current_major=$(echo "$response" |
+                      jq -r '.[].tag_name' |
+                      grep -v "dev" |
+                      sed 's/^v//' |
+                      cut -d'.' -f1 |
+                      sort -rn |
                       head -n1)
-        
+
         if [ -z "$current_major" ]; then
             # If no releases found, try tags
             log "No releases found, checking tags for major version..."
             response=$(curl -s -H "Accept: application/vnd.github.v3+json" "${GITHUB_API}/repos/${GITHUB_REPO}/tags?per_page=100")
-            
+
             # Check for rate limit or other API errors
             if echo "$response" | jq -e 'if type=="object" and has("message") then .message else empty end' >/dev/null 2>&1; then
                 local error_msg
@@ -166,22 +166,22 @@ get_latest_release() {
                 log "GitHub API Error: $error_msg"
                 exit 1
             fi
-            
+
             # Check if response is valid JSON
             if ! echo "$response" | jq -e '.' >/dev/null 2>&1; then
                 log "Error: Invalid JSON response from GitHub API for tags"
                 exit 1
             fi
-            
-            current_major=$(echo "$response" | 
-                          jq -r '.[].name' | 
-                          grep -v "dev" | 
-                          sed 's/^v//' | 
-                          cut -d'.' -f1 | 
-                          sort -rn | 
+
+            current_major=$(echo "$response" |
+                          jq -r '.[].name' |
+                          grep -v "dev" |
+                          sed 's/^v//' |
+                          cut -d'.' -f1 |
+                          sort -rn |
                           head -n1)
         fi
-        
+
         if [ -z "$current_major" ]; then
             log "Error: Could not determine major version from releases or tags"
             exit 1
@@ -337,6 +337,8 @@ get_haproxy_sha256() {
                 log "WARNING: SHA256 mismatch between downloads!"
                 log "First download:  $sha256"
                 log "Second download: $verify_sha256"
+                # Use the SHA256 from the first download anyway
+                log "Using SHA256 from first download for consistency"
             fi
         fi
         rm -f "$verify_file"

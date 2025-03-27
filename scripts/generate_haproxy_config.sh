@@ -75,7 +75,8 @@ else
 fi
 
 if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
-    PIDFILE="pidfile /var/run/haproxy/haproxy.pid"
+    PIDFILE="
+    pidfile /var/run/haproxy/haproxy.pid"
 else
     PIDFILE=""
 fi
@@ -97,7 +98,6 @@ global
     # used for newer reload mechanism. See https://www.haproxy.com/blog/hitless-reloads-with-haproxy-howto/
     stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
     stats timeout 30s
-
     ${PIDFILE}
 
     # [GLOBALS PLACEHOLDER]
@@ -207,22 +207,21 @@ frontend http
     mode            http
     log             global
     option          httplog
-	option			http-keep-alive
-	option			forwardfor
-
-    # Define ACL for ACME challenges
-    acl is_acme_challenge path_beg /.well-known/acme-challenge/
 
     # Define a simple stick table to track domains
     stick-table type string len 100 size 1m expire 300s store http_req_cnt
 
+    # Define ACL for ACME challenges
+    acl is_acme_challenge path_beg /.well-known/acme-challenge/
+
     # Only return responses for domains that were tracked in the stick table
     # This is checked in a separate script that adds the domains when acme.sh runs
-    acl valid_acme_domain hdr(host),field(2,.),table_http_req_cnt(http) gt 0
-    acl valid_acme_sub_domain hdr(host),table_http_req_cnt(http) gt 0
+    acl valid_acme_domain req.hdr(host),field(2,.),table_http_req_cnt(http) gt 0
+    acl valid_acme_sub_domain req.hdr(host),table_http_req_cnt(http) gt 0
 
-    # Respond 200 for our internal ACME challenges
-    http-request return status 200 content-type text/plain lf-string "%[path,regsub(^/.well-known/acme-challenge/,)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain or is_acme_challenge valid_acme_sub_domain
+    # Fallback to the old method if needed
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_sub_domain
+    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain
     ${MIXED_MODE_404_RESPONSE}
 
     # Proxy headers

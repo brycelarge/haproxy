@@ -257,7 +257,8 @@ renew_cert() {
         --stateless \
         -d "${domain}" 2>&1)
 
-    debug_log "$ACME_OUTPUT"
+    debug_log " /config/acme/http.header contents: $(cat /config/acme/http.header)";
+    debug_log "$ACME_OUTPUT";
     release_lock;
 
     # Check if renewal was successful
@@ -621,9 +622,6 @@ add_domain_to_haproxy() {
         echo "[acme] HAProxy socket not found" | ts '%Y-%m-%d %H:%M:%S'
         return 1
     fi
-
-    # Clear existing entries in the stick table
-    echo "clear table http" | socat stdio "unix-connect:${SOCAT_SOCKET}" &>/dev/null
 
     echo "[acme] Adding domain to stick table: ${DOMAIN}" | ts '%Y-%m-%d %H:%M:%S'
 
