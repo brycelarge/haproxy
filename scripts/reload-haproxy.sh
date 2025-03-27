@@ -4,6 +4,7 @@
 SOCKET="/var/lib/haproxy/admin.sock"
 PID_FILE="/var/run/haproxy/haproxy.pid"
 TIMEOUT=30
+MAX_RETRIES=3
 
 source /scripts/debug.sh
 
@@ -68,15 +69,47 @@ if ! kill -0 "$OLD_PID" 2>/dev/null; then
     exit 1
 fi
 
+# Ensure old processes are terminated
+echo "[Haproxy] Checking for stale HAProxy processes..." | ts '%Y-%m-%d %H:%M:%S'
+STALE_PIDS=$(pgrep -f "haproxy -f /config/haproxy.cfg" | grep -v "$OLD_PID" || true)
+if [ -n "$STALE_PIDS" ]; then
+    echo "[Haproxy] Found stale HAProxy processes (PIDs: $STALE_PIDS), terminating them" | ts '%Y-%m-%d %H:%M:%S'
+    for pid in $STALE_PIDS; do
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    # Add a small delay to ensure processes are fully terminated
+    sleep 2
+fi
+
+# Ensure socket is accessible
+if [ -S "$SOCKET" ]; then
+    chmod 660 "$SOCKET"
+    chown haproxy:haproxy "$SOCKET"
+    debug_log "Ensured socket permissions are correct"
+fi
+
 # Perform soft reload
 echo "[Haproxy] Initiating soft reload..." | ts '%Y-%m-%d %H:%M:%S'
 
-# Remove the old PID file to prevent warnings
-rm -f "$PID_FILE"
+# Do NOT remove the old PID file before starting the new process
+# This was causing issues with the socket handoff
 
-# Start new HAProxy process in background
-if ! haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
-    echo "[Haproxy] Error: Failed to reload HAProxy" | ts '%Y-%m-%d %H:%M:%S'
+# Start new HAProxy process with retries
+retry_count=0
+reload_success=false
+
+while [ $retry_count -lt $MAX_RETRIES ] && [ "$reload_success" = "false" ]; do
+    if haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
+        reload_success=true
+    else
+        retry_count=$((retry_count + 1))
+        echo "[Haproxy] Reload attempt $retry_count failed, retrying..." | ts '%Y-%m-%d %H:%M:%S'
+        sleep 2
+    fi
+done
+
+if [ "$reload_success" = "false" ]; then
+    echo "[Haproxy] Error: Failed to reload HAProxy after $MAX_RETRIES attempts" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
 fi
 
