@@ -58,7 +58,7 @@ docker run -d \
   -e CF_Account_ID=your-cloudflare-account-id \
   -e CF_Zone_ID=your-cloudflare-zone-id \
   -e ACME_EMAIL=your-email@example.com \
-  yourusername/haproxy:latest
+  brycelarge/haproxy:latest
 ```
 
 ### Using Docker Compose
@@ -67,7 +67,7 @@ docker run -d \
 version: '3.8'
 services:
   haproxy:
-    image: yourusername/haproxy:latest
+    image: brycelarge/haproxy:latest
     ports:
       - "80:80"
       - "443:443"
