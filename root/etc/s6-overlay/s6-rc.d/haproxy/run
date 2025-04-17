@@ -42,8 +42,6 @@ else
     echo "[Haproxy] is already running." | ts '%Y-%m-%d %H:%M:%S'
 fi
 
-check_for_missing_domain_certs "no"
-
 sleep 10
 
 # Watch for changes in the haproxy configuration file

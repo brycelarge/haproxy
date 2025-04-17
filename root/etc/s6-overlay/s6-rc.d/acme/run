@@ -59,7 +59,7 @@ fi
 if [ -f "/etc/cron.d/acme-renewal" ]; then
     echo "[acme] Found cron job configuration in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
     cat "/etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
-    
+
     # Verify that the cron file uses s6-setuidgid
     if grep -q "s6-setuidgid" "/etc/cron.d/acme-renewal"; then
         echo "[acme] Cron job is configured with s6-setuidgid correctly" | ts '%Y-%m-%d %H:%M:%S'
@@ -67,7 +67,7 @@ if [ -f "/etc/cron.d/acme-renewal" ]; then
         echo "[acme] Warning: Cron job not configured to use s6-setuidgid, fixing..." | ts '%Y-%m-%d %H:%M:%S'
         setup_acme_renewal
     fi
-else 
+else
     echo "[acme] Warning: No cron job found in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
     setup_acme_renewal
 fi
