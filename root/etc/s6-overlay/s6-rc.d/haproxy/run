@@ -52,17 +52,19 @@ exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_w
     if [ "$filename" = "$(basename "$HAPROXY_YAML")" ]; then
         echo "[Haproxy] detected changes to ${filename}, looking for new domains..." | ts '%Y-%m-%d %H:%M:%S'
 
+        /scripts/generate_haproxy_config.sh;
         # Re-read domains as they might have changed but do not reload haproxy
         mapfile -t domains < <(extract_domains)
-        check_for_missing_domain_certs "no";
 
         if [[ "${CONFIG_AUTO_GENERATE}" == "true" ]]; then
+            check_for_missing_domain_certs "block";
+
             # I think haproxy locks the file, so we need to make sure it's not locked before we overwrite it
             chmod 644 "/config/haproxy.cfg"
 
             # regenerate the cfg file and reload haproxy
             echo "[Haproxy] generating new haproxy cfg and reloading haproxy..." | ts '%Y-%m-%d %H:%M:%S'
-            if /scripts/generate_haproxy_config.sh && /scripts/reload-haproxy.sh; then
+            if /scripts/reload-haproxy.sh; then
                 echo "[Haproxy] reloading successful" | ts '%Y-%m-%d %H:%M:%S'
             else
                 EXIT_CODE=$?
@@ -70,6 +72,7 @@ exec s6-setuidgid haproxy inotifywait -m "$(dirname "$HAPROXY_YAML")" -e close_w
             fi
         else
             echo "[Haproxy] auto script generation not enabled, skipping..." | ts '%Y-%m-%d %H:%M:%S'
+            check_for_missing_domain_certs "no";
         fi
     fi
 done

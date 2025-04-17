@@ -137,6 +137,11 @@ issue_cert() {
 
     local hot_update=${2:-"yes"}
 
+    # If hot_update is "block", treat it as "no"
+    if [ "$hot_update" = "block" ]; then
+        hot_update="no"
+    fi
+
     if [ "$DEBUG" = "true" ]; then
         DEBUG_FLAG="--debug"
     else
@@ -186,6 +191,12 @@ issue_cert() {
 
 deploy_cert() {
     local hot_update=${2:-"yes"}
+
+    # If hot_update is "block", treat it as "no"
+    if [ "$hot_update" = "block" ]; then
+        hot_update="no"
+    fi
+
     local domain="${1}"
     local cert_path="/etc/haproxy/certs/${domain}.pem"
 
@@ -239,6 +250,12 @@ renew_cert() {
 
     trap cleanup EXIT
     local hot_update=${2:-"yes"}
+
+    # If hot_update is "block", treat it as "no"
+    if [ "$hot_update" = "block" ]; then
+        hot_update="no"
+    fi
+
     local domain="${1}"
 
     source "$HOME_DIR/acme.sh.env";
