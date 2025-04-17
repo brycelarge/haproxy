@@ -443,7 +443,7 @@ LOG_FILE="/var/log/acme-renewals.log"
 echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Starting certificate renewal process" | tee -a "$LOG_FILE"
 
 # Run the check for missing certs function with hot reload
-check_for_missing_domain_certs "yes"
+check_for_missing_domain_certs "no"
 
 # Log completion
 echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Certificate renewal process completed" | tee -a "$LOG_FILE"
