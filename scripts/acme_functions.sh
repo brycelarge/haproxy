@@ -423,159 +423,30 @@ function setup_acme_renewal() {
     # Create the renewal script
     cat << 'EOF' > /usr/local/bin/renew-certs.sh
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 
-# Ensure all required packages are available
-if ! command -v socat &> /dev/null; then
-    echo "Error: socat not found. Please install it."
-    exit 1
+# Check for test mode
+TEST_ONLY=false
+if [[ "$1" == "--test-only" ]]; then
+    TEST_ONLY=true
+    echo "Running in test mode, no certificates will be checked"
+    exit 0
 fi
 
-# Source environment variables and make path available
-if [ -f /etc/profile ]; then
-    source /etc/profile
-fi
+# Source the acme functions
+source /scripts/acme_functions.sh
 
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
-
-# Source environment variables
-if [ -f /config/acme/acme.sh.env ]; then
-    source /config/acme/acme.sh.env
-else
-    echo "Error: /config/acme/acme.sh.env not found"
-    exit 1
-fi
-
-# make sure acme is not running multiple times
-if [ -f /scripts/acme_lock.sh ]; then
-    source /scripts/acme_lock.sh
-else
-    echo "Error: /scripts/acme_lock.sh not found"
-    exit 1
-fi
-
-# Lock file path
-LOCK_FILE="/tmp/acme.lock"
-
-# Log file path
+# Log file path (already defined in acme_functions.sh)
 LOG_FILE="/var/log/acme-renewals.log"
 
-# Function to log messages
-log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - $1" | tee -a "$LOG_FILE"
-}
+# Log start
+echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Starting certificate renewal process" | tee -a "$LOG_FILE"
 
-log_message "Starting certificate renewal process"
+# Run the check for missing certs function with hot reload
+check_for_missing_domain_certs "yes"
 
-# Main renewal process
-if ! acquire_lock; then
-    log_message "Another ACME process is running, skipping renewal"
-    exit 1
-fi
-
-trap cleanup EXIT
-
-# HAProxy socket check
-HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
-if [ ! -S "$HAPROXY_SOCKET" ]; then
-    log_message "Error: HAProxy socket not found at $HAPROXY_SOCKET"
-    exit 1
-fi
-
-# Function to verify HAProxy is running
-verify_haproxy() {
-    if ! echo "show info" | socat stdio "unix-connect:$HAPROXY_SOCKET" &>/dev/null; then
-        log_message "Error: HAProxy is not responding"
-        return 1
-    fi
-    return 0
-}
-
-# Check HAProxy before proceeding
-if ! verify_haproxy; then
-    log_message "Aborting: HAProxy is not operational"
-    exit 1
-fi
-
-# Function to renew a single certificate
-renew_certificate() {
-    local domain="$1"
-    log_message "Starting renewal for ${domain}"
-
-    # Debug output - show environment
-    env >> "$LOG_FILE" 2>&1
-
-    # Check if acme.sh exists
-    if [ ! -f "/config/acme/acme.sh" ]; then
-        log_message "Error: acme.sh not found at /config/acme/acme.sh"
-        return 1
-    fi
-
-    # Ensure we have write permissions to cert directories
-    if [ ! -w "/config/acme/certs" ] || [ ! -w "/etc/haproxy/certs" ]; then
-        log_message "Error: Missing write permissions to certificate directories"
-        return 1
-    fi
-
-    # Run renewal with verbose output
-    log_message "Executing renew command for ${domain}"
-    /config/acme/acme.sh \
-        --renew -d "${domain}" \
-        --force --debug >> "$LOG_FILE" 2>&1 || {
-            log_message "Failed to renew certificate for ${domain}"
-            return 1
-        }
-
-    # Deploy the renewed certificate
-    log_message "Deploying renewed certificate for ${domain}"
-    /config/acme/acme.sh \
-        --deploy -d "${domain}" \
-        --deploy-hook haproxy --debug >> "$LOG_FILE" 2>&1 || {
-            log_message "Failed to deploy certificate for ${domain}"
-            return 1
-        }
-
-    log_message "Successfully renewed and deployed certificate for ${domain}"
-    return 0
-}
-
-# Get list of all domains with certificates
-log_message "Scanning for domains that need renewal"
-DOMAINS_FOUND=0
-if [ -d "/config/acme/certs" ]; then
-    find /config/acme/certs -name "*.conf" | grep -v ".csr.conf" | while read -r conf_file; do
-        domain=$(basename "$conf_file" .conf)
-        log_message "Found domain: $domain"
-        DOMAINS_FOUND=$((DOMAINS_FOUND+1))
-        renew_certificate "$domain"
-    done
-else
-    log_message "Error: Certificate directory /config/acme/certs not found"
-fi
-
-if [ "$DOMAINS_FOUND" -eq 0 ]; then
-    log_message "No domains found for renewal. Checking YAML file."
-
-    # If no domains found in certs directory, try to get domains from yaml
-    if [ -f "/config/haproxy.yaml" ]; then
-        if command -v yq &> /dev/null; then
-            DOMAINS=$(yq e '.domain_mappings[].domain' "/config/haproxy.yaml" | sort | uniq)
-            if [ -n "$DOMAINS" ]; then
-                log_message "Found domains in YAML file: $DOMAINS"
-                echo "$DOMAINS" | while read -r domain; do
-                    renew_certificate "$domain"
-                done
-            else
-                log_message "No domains found in YAML file"
-            fi
-        else
-            log_message "Warning: yq command not found, cannot extract domains from YAML"
-        fi
-    else
-        log_message "Warning: /config/haproxy.yaml not found"
-    fi
-fi
-
-log_message "Certificate renewal process completed"
+# Log completion
+echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Certificate renewal process completed" | tee -a "$LOG_FILE"
 EOF
 
     # Make the renewal script executable
@@ -591,7 +462,7 @@ EOF
     # Create the cron file in /etc/cron.d with proper ownership
     cat << EOF > /etc/cron.d/acme-renewal
 # Run certificate renewal at 2:30 AM on Monday and Thursday
-30 2 * * 1,4 ${USER} /usr/local/bin/renew-certs.sh > ${LOG_FILE} 2>&1
+30 2 * * 1,4 root s6-setuidgid ${USER} /usr/local/bin/renew-certs.sh > ${LOG_FILE} 2>&1
 EOF
 
     # Make sure cron file has correct permissions
