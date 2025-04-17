@@ -59,9 +59,26 @@ fi
 if [ -f "/etc/cron.d/acme-renewal" ]; then
     echo "[acme] Found cron job configuration in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
     cat "/etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
+    
+    # Verify that the cron file uses s6-setuidgid
+    if grep -q "s6-setuidgid" "/etc/cron.d/acme-renewal"; then
+        echo "[acme] Cron job is configured with s6-setuidgid correctly" | ts '%Y-%m-%d %H:%M:%S'
+    else
+        echo "[acme] Warning: Cron job not configured to use s6-setuidgid, fixing..." | ts '%Y-%m-%d %H:%M:%S'
+        setup_acme_renewal
+    fi
 else 
     echo "[acme] Warning: No cron job found in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
     setup_acme_renewal
+fi
+
+# Perform a test run of the command to verify it works
+echo "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
+s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
+else
+    echo "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
 fi
 
 echo "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
