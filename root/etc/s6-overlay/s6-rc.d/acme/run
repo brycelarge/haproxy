@@ -8,6 +8,8 @@ ACME_THUMBPRINT="/config/acme/ca/thumbprint"
 HAPROXY_PID_FILE="/var/run/haproxy/haproxy.pid"
 HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
 
+sleep 10
+
 # Loop until acme thumbprint file exists
 while [ ! -f "$ACME_THUMBPRINT" ]; do
     echo "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
