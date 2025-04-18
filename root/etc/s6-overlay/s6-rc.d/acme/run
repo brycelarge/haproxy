@@ -50,16 +50,6 @@ else
     chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
 fi
 
-# Verify that cron daemon is running
-if [ -d "/run/s6/services/cron" ] && s6-svstat -o up /run/s6/services/cron | grep -q true; then
-    debug_log "[acme] Cron service is running (s6)" | ts '%Y-%m-%d %H:%M:%S'
-elif command -v pgrep >/dev/null 2>&1 && pgrep -x "crond" >/dev/null; then
-    debug_log "[acme] Cron daemon is running" | ts '%Y-%m-%d %H:%M:%S'
-else
-    debug_log "[acme] Warning: Cron daemon not detected - creating one" | ts '%Y-%m-%d %H:%M:%S'
-    exec crond -f -d 8 &
-fi
-
 # Perform a test run of the command to verify it works
 debug_log "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
 s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
