@@ -12,14 +12,14 @@ sleep 10
 
 # Loop until acme thumbprint file exists
 while [ ! -f "$ACME_THUMBPRINT" ]; do
-    echo "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 3
 done
 
 # Wait for HAProxy to be fully started by checking for its PID file and socket
-echo "[acme] waiting for HAProxy to be fully started..." | ts '%Y-%m-%d %H:%M:%S'
+debug_log "[acme] waiting for HAProxy to be fully started..." | ts '%Y-%m-%d %H:%M:%S'
 while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
-    echo "[acme] waiting for HAProxy to be fully started (PID file: $([ -f "$HAPROXY_PID_FILE" ] && echo "exists" || echo "missing"), Socket: $([ -S "$HAPROXY_SOCKET" ] && echo "exists" || echo "missing"))..." | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] waiting for HAProxy to be fully started (PID file: $([ -f "$HAPROXY_PID_FILE" ] && echo "exists" || echo "missing"), Socket: $([ -S "$HAPROXY_SOCKET" ] && echo "exists" || echo "missing"))..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 5
 done
 
@@ -28,10 +28,10 @@ MAX_ATTEMPTS=12
 ATTEMPT=0
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     if echo "show info" | socat stdio "unix-connect:$HAPROXY_SOCKET" &>/dev/null; then
-        echo "[acme] HAProxy is fully operational, proceeding with certificate checks..." | ts '%Y-%m-%d %H:%M:%S'
+        debug_log "[acme] HAProxy is fully operational, proceeding with certificate checks..." | ts '%Y-%m-%d %H:%M:%S'
         break
     fi
-    echo "[acme] HAProxy is not responding yet, waiting (attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)..." | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] HAProxy is not responding yet, waiting (attempt $((ATTEMPT+1))/$MAX_ATTEMPTS)..." | ts '%Y-%m-%d %H:%M:%S'
     ATTEMPT=$((ATTEMPT+1))
     sleep 5
 done
@@ -50,40 +50,23 @@ else
     chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
 fi
 
-# Verify that cron daemon is running (should be started by the cron service)
-if pgrep -x "crond" > /dev/null; then
-    echo "[acme] Cron daemon is running" | ts '%Y-%m-%d %H:%M:%S'
+# Verify that cron daemon is running
+if [ -d "/run/s6/services/cron" ] && s6-svstat -o up /run/s6/services/cron | grep -q true; then
+    debug_log "[acme] Cron service is running (s6)" | ts '%Y-%m-%d %H:%M:%S'
+elif command -v pgrep >/dev/null 2>&1 && pgrep -x "crond" >/dev/null; then
+    debug_log "[acme] Cron daemon is running" | ts '%Y-%m-%d %H:%M:%S'
 else
-    echo "[acme] Warning: Cron daemon not detected, certificates may not auto-renew" | ts '%Y-%m-%d %H:%M:%S'
-fi
-
-# Check for cron.d file
-if [ -f "/etc/cron.d/acme-renewal" ]; then
-    echo "[acme] Found cron job configuration in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
-    cat "/etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
-
-    # Verify that the cron file uses s6-setuidgid
-    if grep -q "s6-setuidgid" "/etc/cron.d/acme-renewal"; then
-        echo "[acme] Cron job is configured with s6-setuidgid correctly" | ts '%Y-%m-%d %H:%M:%S'
-    else
-        echo "[acme] Warning: Cron job not configured to use s6-setuidgid, fixing..." | ts '%Y-%m-%d %H:%M:%S'
-        setup_acme_renewal
-    fi
-else
-    echo "[acme] Warning: No cron job found in /etc/cron.d/acme-renewal" | ts '%Y-%m-%d %H:%M:%S'
-    setup_acme_renewal
+    debug_log "[acme] Warning: Cron daemon not detected - creating one" | ts '%Y-%m-%d %H:%M:%S'
+    exec crond -f -d 8 &
 fi
 
 # Perform a test run of the command to verify it works
-echo "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
+debug_log "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
 s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
 if [ $? -eq 0 ]; then
-    echo "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
 else
-    echo "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
 fi
 
-echo "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
-
-# Keep the service running
-tail -f /dev/null
+debug_log "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'

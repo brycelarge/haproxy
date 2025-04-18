@@ -470,9 +470,6 @@ EOF
     chmod +x /usr/local/bin/renew-certs.sh
     chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
 
-    # Instead of using crontab, we'll create a direct cron entry in /etc/cron.d
-    echo "[acme] Creating renewal job in /etc/cron.d" | ts '%Y-%m-%d %H:%M:%S'
-
     # Create the cron.d directory if it doesn't exist
     mkdir -p /etc/cron.d
 
@@ -485,8 +482,7 @@ EOF
     # Make sure cron file has correct permissions
     chmod 0644 /etc/cron.d/acme-renewal
 
-    echo "[acme] Cron job set up successfully" | ts '%Y-%m-%d %H:%M:%S'
-    echo "[acme] Renewal schedule: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
+    echo "[acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
 
     # Show the current cron configuration
     if [ "${DEBUG}" == "true" ]; then
