@@ -36,13 +36,9 @@ if ! pgrep -x "haproxy" > /dev/null; then
     else
         s6-setuidgid haproxy haproxy -f /config/haproxy.cfg
     fi
-
-    echo "[Haproxy] started!" | ts '%Y-%m-%d %H:%M:%S'
 else
     echo "[Haproxy] is already running." | ts '%Y-%m-%d %H:%M:%S'
 fi
-
-sleep 10
 
 # Watch for changes in the haproxy configuration file
 echo "[Haproxy] is monitoring your haproxy.yaml file for changes, if changes are detected we will look for any new domains and issue those certificates automatically" | ts '%Y-%m-%d %H:%M:%S'

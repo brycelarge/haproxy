@@ -6,7 +6,7 @@ HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
 
 # Wait for HAProxy to be fully started by checking for its PID file and socket
 while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
-    sleep 5
+    sleep 1
 done
 
 echo "[rsyslogd] starting.." | ts '%Y-%m-%d %H:%M:%S'

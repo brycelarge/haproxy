@@ -312,18 +312,18 @@ function check_for_missing_domain_certs() {
     local certs_updated=false
 
     # Wait for HAProxy to fully initialize
-    echo "[acme] Waiting for HAProxy to fully initialize before processing certificates..." | ts '%Y-%m-%d %H:%M:%S'
-    sleep 10
+    debug_log "[acme] Waiting for HAProxy to fully initialize before processing certificates..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 5
 
     # Verify HAProxy is running by checking the socket
     if [ -S "/var/lib/haproxy/admin.sock" ]; then
         if ! echo "show info" | socat stdio "unix-connect:/var/lib/haproxy/admin.sock" &>/dev/null; then
-            echo "[acme] Warning: HAProxy is not responding, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
+            debug_log "[acme] Warning: HAProxy is not responding, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
         else
-            echo "[acme] HAProxy is running and responsive" | ts '%Y-%m-%d %H:%M:%S'
+            debug_log "[acme] HAProxy is running and responsive" | ts '%Y-%m-%d %H:%M:%S'
         fi
     else
-        echo "[acme] Warning: HAProxy socket not found, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
+        debug_log "[acme] Warning: HAProxy socket not found, but proceeding anyway..." | ts '%Y-%m-%d %H:%M:%S'
     fi
 
     # Create an array of domains
@@ -421,12 +421,23 @@ function check_for_missing_domain_certs() {
 }
 
 verify_cron() {
-    echo "[acme] Verifying ACME cron job and installing if it does not exist" | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] Verifying ACME cron job and installing if it does not exist" | ts '%Y-%m-%d %H:%M:%S'
 
     # Check if cron job exists
     if ! s6-setuidgid "$USER" crontab -l 2>/dev/null | grep -q "/usr/local/bin/renew-certs.sh"; then
         setup_acme_renewal
     fi
+
+    # Perform a test run of the command to verify it works
+    debug_log "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
+    s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        debug_log "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
+    else
+        debug_log "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
+    fi
+
+    debug_log "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
 }
 
 function setup_acme_renewal() {
@@ -482,7 +493,11 @@ EOF
     # Make sure cron file has correct permissions
     chmod 0644 /etc/cron.d/acme-renewal
 
-    echo "[acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S'
+    # First log to file directly
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" >> "${LOG_FILE}"
+
+    # Then output to console with timestamp in a more direct way
+    echo "[acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S' || true
 
     # Show the current cron configuration
     if [ "${DEBUG}" == "true" ]; then

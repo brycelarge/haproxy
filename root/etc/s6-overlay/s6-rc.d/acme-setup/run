@@ -18,7 +18,7 @@ if [ ! -e /config/acme/acme.sh.env ]; then
 fi
 
 if [ ! -d /config/acme/ca ]; then
-    register_acme
-else
-    verify_cron
+    register_acme;
 fi
+
+verify_cron;

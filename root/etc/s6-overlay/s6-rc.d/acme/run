@@ -8,11 +8,11 @@ ACME_THUMBPRINT="/config/acme/ca/thumbprint"
 HAPROXY_PID_FILE="/var/run/haproxy/haproxy.pid"
 HAPROXY_SOCKET="/var/lib/haproxy/admin.sock"
 
-sleep 10
+sleep 5
 
 # Loop until acme thumbprint file exists
 while [ ! -f "$ACME_THUMBPRINT" ]; do
-    debug_log "[acme] waiting for $ACME_THUMBPRINT to be created before setting up acme..." | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[acme] waiting for $ACME_THUMBPRINT to be created before running acme..." | ts '%Y-%m-%d %H:%M:%S'
     sleep 3
 done
 
@@ -38,25 +38,3 @@ done
 
 # Process certificates
 check_for_missing_domain_certs "no"
-
-# Make sure renewal script exists and is executable
-echo "[acme] Setting up certificate renewal job..." | ts '%Y-%m-%d %H:%M:%S'
-
-if [ ! -x "/usr/local/bin/renew-certs.sh" ]; then
-    setup_acme_renewal
-else
-    # Ensure script has correct permissions
-    chmod +x /usr/local/bin/renew-certs.sh
-    chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
-fi
-
-# Perform a test run of the command to verify it works
-debug_log "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
-s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
-if [ $? -eq 0 ]; then
-    debug_log "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
-else
-    debug_log "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
-fi
-
-debug_log "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
