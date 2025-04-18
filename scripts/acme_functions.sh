@@ -476,7 +476,7 @@ EOF
     # Create the cron file in /etc/cron.d with proper ownership
     cat << EOF > /etc/cron.d/acme-renewal
 # Run certificate renewal at 2:30 AM on Monday and Thursday
-30 2 * * 1,4 root s6-setuidgid ${USER} /usr/local/bin/renew-certs.sh > ${LOG_FILE} 2>&1
+30 2 * * 1,4 root s6-setuidgid ${USER} /usr/local/bin/renew-certs.sh | tee -a ${LOG_FILE} 2>&1
 EOF
 
     # Make sure cron file has correct permissions
