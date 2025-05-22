@@ -603,6 +603,7 @@ generate_backend_configs() {
         is_ssl=$(echo "$backend" | jq -r '.ssl // false')
         ssl_verify=$(echo "$backend" | jq -r '.ssl_verify // false')
         enable_h2=$(echo "$backend" | jq -r '.enable_h2 // false')
+        use_send_proxy=$(echo "$backend" | jq -r '.send-proxy // false')
 
         debug_log "Processing backend: $name"
 
@@ -678,6 +679,27 @@ generate_backend_configs() {
             ssl_options="ssl"
             if [ "$ssl_verify" = "false" ]; then
                 ssl_options="${ssl_options} verify none"
+            fi
+        fi
+
+        send_proxy=""
+        if [ "$use_send_proxy" = "true" ]; then
+            if [ "$is_ssl" = "true" ]; then
+                send_proxy="send-proxy-v2-ssl-cn"
+            else
+                send_proxy="send-proxy-v2"
+            fi
+        fi
+
+        # First determine the proxy option based on SSL and send-proxy settings
+        send_proxy=""
+        if [ "$use_send_proxy" = "true" ]; then
+            if [ "$is_ssl" = "true" ]; then
+                # When SSL is enabled, use ssl-cn version to preserve certificate info
+                send_proxy="send-proxy-v2-ssl-cn"
+            else
+                # For non-SSL connections, use standard proxy protocol
+                send_proxy="send-proxy-v2"
             fi
         fi
 
