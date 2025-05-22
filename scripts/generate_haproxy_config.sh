@@ -603,7 +603,7 @@ generate_backend_configs() {
         is_ssl=$(echo "$backend" | jq -r '.ssl // false')
         ssl_verify=$(echo "$backend" | jq -r '.ssl_verify // false')
         enable_h2=$(echo "$backend" | jq -r '.enable_h2 // false')
-        use_send_proxy=$(echo "$backend" | jq -r '.send-proxy // false')
+        use_send_proxy=$(echo "$backend" | jq -r '.use_send_proxy // false')
 
         debug_log "Processing backend: $name"
 
@@ -682,15 +682,6 @@ generate_backend_configs() {
             fi
         fi
 
-        send_proxy=""
-        if [ "$use_send_proxy" = "true" ]; then
-            if [ "$is_ssl" = "true" ]; then
-                send_proxy="send-proxy-v2-ssl-cn"
-            else
-                send_proxy="send-proxy-v2"
-            fi
-        fi
-
         # First determine the proxy option based on SSL and send-proxy settings
         send_proxy=""
         if [ "$use_send_proxy" = "true" ]; then
@@ -716,7 +707,7 @@ generate_backend_configs() {
                         h2_options=" alpn h2"
                     fi
                 fi
-                server_lines="${server_lines}    server ${name}-srv${server_count} ${host}${ssl_options:+ $ssl_options}${h2_options}${server_check:+ $server_check}
+                server_lines="${server_lines}    server ${name}-srv${server_count} ${host}${ssl_options:+ $ssl_options}${h2_options}${server_check:+ $server_check}${send_proxy:+ $send_proxy}
 "
                 server_count=$((server_count + 1))
             fi
