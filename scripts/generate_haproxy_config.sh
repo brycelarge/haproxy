@@ -620,11 +620,20 @@ generate_backend_configs() {
             continue
         fi
 
-        # In your generate_backend_configs function
+        # Handle options and other directives
         options_config=""
         if echo "$backend" | jq -e '.options[]' > /dev/null 2>&1; then
-            # Convert each option in the array to a line
-            options_config=$(echo "$backend" | jq -r '.options[]? | "    option " + .')
+            # Process each option, handling special cases for httpchk with headers
+            options_config=$(echo "$backend" | jq -r '.options[]?' | while read -r option; do
+                # Check if this is an httpchk option with headers that contain \r\n
+                if [[ "$option" == *"httpchk"*"\r\n"* ]]; then
+                    # Process the httpchk option to ensure headers are on the same line
+                    # Replace \r\n with actual carriage return and newline in the HAProxy config
+                    echo "    option $(echo "$option" | sed 's/\\r\\n/\r\n/g' | sed 's/\\ / /g')"
+                else
+                    echo "    option $option"
+                fi
+            done)
         fi
 
         # Handle http-check directives separately
@@ -632,6 +641,13 @@ generate_backend_configs() {
         if echo "$backend" | jq -e '.http_check[]' > /dev/null 2>&1; then
             # Add http-check directives without "option" prefix
             http_check_config=$(echo "$backend" | jq -r '.http_check[]? | "    http-check " + .')
+        fi
+
+        # Handle extra_config directives
+        extra_config=""
+        if echo "$backend" | jq -e '.extra_config[]' > /dev/null 2>&1; then
+            # Add extra_config directives without any prefix
+            extra_config=$(echo "$backend" | jq -r '.extra_config[]? | "    " + .')
         fi
 
         # Set default values for timeout if they are null or empty
@@ -737,6 +753,7 @@ EOF
     [ -n "$health_check" ] && echo "    ${health_check}"
     [ -n "$options_config" ] && echo "${options_config}"
     [ -n "$http_check_config" ] && echo "${http_check_config}"
+    [ -n "$extra_config" ] && echo "${extra_config}"
     [ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings"
     echo -n "${server_lines}"
     [ -n "$cache" ] && echo -n "    ${cache}"
