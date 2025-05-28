@@ -627,6 +627,13 @@ generate_backend_configs() {
             options_config=$(echo "$backend" | jq -r '.options[]? | "    option " + .')
         fi
 
+        # Handle http-check directives separately
+        http_check_config=""
+        if echo "$backend" | jq -e '.http_check[]' > /dev/null 2>&1; then
+            # Add http-check directives without "option" prefix
+            http_check_config=$(echo "$backend" | jq -r '.http_check[]? | "    http-check " + .')
+        fi
+
         # Set default values for timeout if they are null or empty
         timeout_connect=${timeout_connect:-5000}
         timeout_server=${timeout_server:-50000}
@@ -729,6 +736,7 @@ EOF
     [ -n "$retries" ] && echo "    ${retries}"
     [ -n "$health_check" ] && echo "    ${health_check}"
     [ -n "$options_config" ] && echo "${options_config}"
+    [ -n "$http_check_config" ] && echo "${http_check_config}"
     [ "$enable_h2" = "true" ] && [ "$is_ssl" = "false" ] && echo "    # HTTP/2 Cleartext (h2c) settings"
     echo -n "${server_lines}"
     [ -n "$cache" ] && echo -n "    ${cache}"
