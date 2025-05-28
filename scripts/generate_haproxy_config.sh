@@ -652,8 +652,12 @@ generate_backend_configs() {
                 check_interval=$(echo "$backend" | jq -r '.check.interval // "2000"')
                 check_fall=$(echo "$backend" | jq -r '.check.fall // "3"')
                 check_rise=$(echo "$backend" | jq -r '.check.rise // "2"')
+                slowstart=$(echo "$backend" | jq -r '.check.slowstart // false')
 
                 server_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
+                if [ "$slowstart" != "false" ]; then
+                    server_check="${server_check} slowstart ${slowstart}"
+                fi
 
                 case $check_type in
                     http)
