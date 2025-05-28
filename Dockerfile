@@ -1,6 +1,6 @@
 FROM alpine:3.21 AS openssl-builder
 
-ENV OPENSSL_URL=https://github.com/quictls/openssl/archive/refs/tags/openssl-3.1.7-quic1.tar.gz
+ENV OPENSSL_URL=https://github.com/quictls/openssl/archive/refs/tags/openssl-3.3.0-quic1.tar.gz
 
 RUN apk add --no-cache curl build-base make autoconf automake gcc libc-dev linux-headers && \
     curl -sfSL "${OPENSSL_URL}" -o openssl.tar.gz && \
