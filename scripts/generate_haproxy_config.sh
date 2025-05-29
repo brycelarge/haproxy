@@ -83,7 +83,6 @@ fi
 
 cat <<EOF >> "$HAPROXY_CFG"
 global
-    maxconn 4096
     daemon
     hard-stop-after 15m
 
