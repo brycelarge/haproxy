@@ -85,7 +85,6 @@ cat <<EOF >> "$HAPROXY_CFG"
 global
     daemon
     hard-stop-after 15m
-    soft-stop-after 10m
 
     # Performance Optimizations
     nbthread ${HAPROXY_THREADS}
@@ -301,7 +300,6 @@ frontend https-offloading-ip-protection
     http-response set-header Vary Accept-Encoding
 
     compression offload
-    compression algo-feedback on
 
     # Placed by yaml domain_mappings
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
