@@ -59,7 +59,7 @@ fi
 
 : "${HAPROXY_THREADS:=4}"
 : "${QUIC_MAX_AGE:=86400}"
-: "${H3_29_SUPPORT:=true}"
+: "${H3_29_SUPPORT:=false}"
 : "${MIXED_SSL_MODE:=false}"
 
 if [ -z "${HAPROXY_BIND_IP}" ]; then
