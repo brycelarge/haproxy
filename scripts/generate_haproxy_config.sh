@@ -68,10 +68,17 @@ fi
 
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
-if [ "$H3_29_SUPPORT" = "true" ]; then
-    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}, h3-29=\":443\"; ma=3600"
+# Set the correct port for HTTP/3 alt-svc header based on MIXED_SSL_MODE
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    QUIC_PORT="8443"
 else
-    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}"
+    QUIC_PORT="443"
+fi
+
+if [ "$H3_29_SUPPORT" = "true" ]; then
+    ALT_SVC="h3=\":${QUIC_PORT}\"; ma=${QUIC_MAX_AGE}, h3-29=\":${QUIC_PORT}\"; ma=3600"
+else
+    ALT_SVC="h3=\":${QUIC_PORT}\"; ma=${QUIC_MAX_AGE}"
 fi
 
 if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
@@ -737,14 +744,14 @@ generate_backend_configs() {
                 # Parse host to extract address and options (like 'backup')
                 host_address=$(echo "$host" | awk '{print $1}' | tr -d '"')
                 host_options=$(echo "$host" | cut -d' ' -f2- -s | tr -d '"')
-                
+
                 # Check for per-host enable_h2 setting
                 host_enable_h2="false"
                 if [ "$is_json" = "true" ]; then
                     # For JSON object hosts, check for enable_h2 in the host entry
                     host_enable_h2=$(echo "$host_entry" | jq -r '.enable_h2 // "false"')
                 fi
-                
+
                 # If host explicitly sets enable_h2, use that value
                 # Otherwise fall back to backend-level setting
                 if [ "$host_enable_h2" = "false" ] && [ "$enable_h2" = "true" ]; then
@@ -753,7 +760,7 @@ generate_backend_configs() {
                     # Host explicitly enables H2 even if backend doesn't
                     host_enable_h2="true"
                 fi
-                
+
                 h2_options=""
                 if [ "$host_enable_h2" = "true" ]; then
                     h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
