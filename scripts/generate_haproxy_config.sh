@@ -309,7 +309,7 @@ EOF
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
     bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS} retry-on-503
+    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS}
     mode            http
     log             global
     option          http-keep-alive
@@ -746,7 +746,7 @@ generate_backend_configs() {
 
                 h2_options=""
                 if [ "$enable_h2" = "true" ]; then
-                    h2_options=" alpn h2 check-reuse-pool idle-ping"
+                    h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
                 fi
 
                 server_lines="${server_lines}    server ${name}-srv${server_count} ${host_address}${ssl_options:+ $ssl_options}${h2_options}${host_check:+ $host_check}${host_options:+ $host_options}${send_proxy:+ $send_proxy}
