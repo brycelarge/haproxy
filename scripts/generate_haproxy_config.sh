@@ -737,9 +737,25 @@ generate_backend_configs() {
                 # Parse host to extract address and options (like 'backup')
                 host_address=$(echo "$host" | awk '{print $1}' | tr -d '"')
                 host_options=$(echo "$host" | cut -d' ' -f2- -s | tr -d '"')
-
+                
+                # Check for per-host enable_h2 setting
+                host_enable_h2="false"
+                if [ "$is_json" = "true" ]; then
+                    # For JSON object hosts, check for enable_h2 in the host entry
+                    host_enable_h2=$(echo "$host_entry" | jq -r '.enable_h2 // "false"')
+                fi
+                
+                # If host explicitly sets enable_h2, use that value
+                # Otherwise fall back to backend-level setting
+                if [ "$host_enable_h2" = "false" ] && [ "$enable_h2" = "true" ]; then
+                    host_enable_h2="true"
+                elif [ "$host_enable_h2" = "true" ]; then
+                    # Host explicitly enables H2 even if backend doesn't
+                    host_enable_h2="true"
+                fi
+                
                 h2_options=""
-                if [ "$enable_h2" = "true" ]; then
+                if [ "$host_enable_h2" = "true" ]; then
                     h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
                 fi
 
