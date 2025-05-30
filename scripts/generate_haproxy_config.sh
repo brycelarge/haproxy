@@ -208,7 +208,7 @@ frontend http
     option          httplog
 
     # Define a simple stick table to track domains
-    stick-table type string len 100 size 100k expire 300s store http_req_cnt
+    stick-table type string len 100 size 100k expire 300s store http_req_cnt,gpc0
 
     # Define ACL for ACME challenges
     acl is_acme_challenge path_beg /.well-known/acme-challenge/
@@ -247,7 +247,7 @@ frontend https
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
 
     # Strict TLS inspection with timeout
-    tcp-request inspect-delay 5s
+    tcp-request inspect-delay 10s
     tcp-request content accept if { req.ssl_hello_type 1 }
 
     # Placed by yaml https_frontend_rules
@@ -309,7 +309,7 @@ EOF
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
     bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS}
+    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS} retry-on-503
     mode            http
     log             global
     option          http-keep-alive
@@ -335,6 +335,12 @@ frontend https-offloading
     http-response set-header X-XSS-Protection "1; mode=block"
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
+    # Experimental headers
+    http-response set-header Content-Security-Policy "default-src 'self'; frame-ancestors 'self'"  # ADDED: Content-Security-Policy header
+    http-response set-header X-Content-Type-Options nosniff  # ADDED: Prevent MIME type sniffing
+    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"  # ADDED: HSTS header
+    http-response set-header X-Frame-Options SAMEORIGIN  # ADDED: Prevent clickjacking
+    http-response set-header Referrer-Policy strict-origin-when-cross-origin  # ADDED: Control referrer information
 
     http-response set-header alt-svc "${ALT_SVC}"
 
@@ -740,11 +746,7 @@ generate_backend_configs() {
 
                 h2_options=""
                 if [ "$enable_h2" = "true" ]; then
-                    if [ "$is_ssl" = "true" ]; then
-                        h2_options=" alpn h2"
-                    else
-                        h2_options=" alpn h2"
-                    fi
+                    h2_options=" alpn h2 check-reuse-pool idle-ping"
                 fi
 
                 server_lines="${server_lines}    server ${name}-srv${server_count} ${host_address}${ssl_options:+ $ssl_options}${h2_options}${host_check:+ $host_check}${host_options:+ $host_options}${send_proxy:+ $send_proxy}
