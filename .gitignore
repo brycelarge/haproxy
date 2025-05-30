@@ -1,3 +1,5 @@
 /config
 .idea
 .vscode
+haproxy.yaml
+haproxy.cfg
