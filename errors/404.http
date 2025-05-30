@@ -1,4 +1,4 @@
-HTTP/1.0 400 Bad Request
+HTTP/1.0 404 Not Found
 Cache-Control: no-cache
 Connection: close
 Content-Type: text/html
@@ -6,7 +6,7 @@ Content-Type: text/html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>400 Bad Request</title>
+    <title>404 Not Found</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
@@ -50,25 +50,26 @@ Content-Type: text/html
             }
         }
         
-        @keyframes shake {
-            0%, 100% {
-                transform: translateX(0);
+        @keyframes float {
+            0% {
+                transform: translateY(0px);
             }
-            10%, 30%, 50%, 70%, 90% {
-                transform: translateX(-5px);
+            50% {
+                transform: translateY(-20px);
             }
-            20%, 40%, 60%, 80% {
-                transform: translateX(5px);
+            100% {
+                transform: translateY(0px);
             }
         }
         
         .error-code {
             font-size: 8rem;
             font-weight: 900;
-            color: #ff7675;
+            color: #6c5ce7;
             margin: 0;
             line-height: 1;
             text-shadow: 2px 2px 0 #e2e2e2;
+            animation: float 6s ease-in-out infinite;
         }
         
         h1 {
@@ -87,85 +88,87 @@ Content-Type: text/html
         .btn {
             display: inline-block;
             color: white;
-            background: #ff7675;
+            background: #6c5ce7;
             padding: 12px 24px;
             border-radius: 50px;
             text-decoration: none;
             font-weight: 600;
             transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(255, 118, 117, 0.4);
+            box-shadow: 0 5px 15px rgba(108, 92, 231, 0.4);
         }
         
         .btn:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(255, 118, 117, 0.5);
+            box-shadow: 0 8px 25px rgba(108, 92, 231, 0.5);
         }
         
         .graphic {
-            width: 150px;
+            width: 200px;
             height: 150px;
             margin: 0 auto 30px;
             position: relative;
         }
         
-        .file {
-            width: 90px;
-            height: 110px;
-            background: #ff7675;
+        .ghost {
+            width: 80px;
+            height: 100px;
+            background: #6c5ce7;
+            border-radius: 50% 50% 0 0;
             position: absolute;
             left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            border-radius: 5px;
-            box-shadow: 0 10px 25px rgba(255, 118, 117, 0.5);
-            animation: shake 1.5s ease-in-out 2s;
+            top: 20px;
+            transform: translateX(-50%);
+            box-shadow: 0 10px 25px rgba(108, 92, 231, 0.5);
+            animation: float 6s ease-in-out infinite;
         }
         
-        .file::before {
+        .ghost::before {
             content: "";
             position: absolute;
-            width: 40px;
-            height: 25px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
             background: white;
-            border-radius: 3px;
-            top: 45px;
+            top: 30px;
+            left: 15px;
+            box-shadow: 40px 0 0 white;
+        }
+        
+        .ghost::after {
+            content: "";
+            position: absolute;
+            width: 30px;
+            height: 15px;
+            background: white;
+            border-radius: 10px;
+            top: 60px;
             left: 25px;
         }
         
-        .file::after {
-            content: "?";
-            position: absolute;
-            color: #ff7675;
-            font-size: 20px;
-            font-weight: bold;
-            top: 45px;
-            left: 43px;
-        }
-        
-        .mark {
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            background: #ff7675;
+        .shadow {
+            width: 70px;
+            height: 15px;
+            background: rgba(108, 92, 231, 0.2);
             border-radius: 50%;
-            color: white;
-            text-align: center;
-            line-height: 30px;
-            font-weight: bold;
-            font-size: 20px;
-            top: 0;
-            right: 20px;
-            box-shadow: 0 5px 15px rgba(255, 118, 117, 0.4);
-            transform: translateY(0);
-            animation: float 3s ease-in-out infinite;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: shadow 6s ease-in-out infinite;
         }
         
-        @keyframes float {
-            0%, 100% {
-                transform: translateY(0);
+        @keyframes shadow {
+            0% {
+                transform: translateX(-50%) scale(1);
+                opacity: 0.6;
             }
             50% {
-                transform: translateY(-10px);
+                transform: translateX(-50%) scale(0.8);
+                opacity: 0.3;
+            }
+            100% {
+                transform: translateX(-50%) scale(1);
+                opacity: 0.6;
             }
         }
     </style>
@@ -173,12 +176,12 @@ Content-Type: text/html
 <body>
     <div class="container">
         <div class="graphic">
-            <div class="file"></div>
-            <div class="mark">!</div>
+            <div class="ghost"></div>
+            <div class="shadow"></div>
         </div>
-        <div class="error-code">400</div>
-        <h1>Bad Request</h1>
-        <p>Your browser sent a request that this server couldn't understand.</p>
+        <div class="error-code">404</div>
+        <h1>Page Not Found</h1>
+        <p>The page you're looking for doesn't exist or has been moved.</p>
         <a href="/" class="btn">Go Home</a>
     </div>
 </body>

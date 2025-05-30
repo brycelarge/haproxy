@@ -1,4 +1,4 @@
-HTTP/1.0 400 Bad Request
+HTTP/1.0 500 Internal Server Error
 Cache-Control: no-cache
 Connection: close
 Content-Type: text/html
@@ -6,7 +6,7 @@ Content-Type: text/html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>400 Bad Request</title>
+    <title>500 Internal Server Error</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
@@ -50,22 +50,25 @@ Content-Type: text/html
             }
         }
         
-        @keyframes shake {
-            0%, 100% {
-                transform: translateX(0);
+        @keyframes rotate {
+            0% {
+                transform: rotate(0deg);
             }
-            10%, 30%, 50%, 70%, 90% {
-                transform: translateX(-5px);
+            25% {
+                transform: rotate(-10deg);
             }
-            20%, 40%, 60%, 80% {
-                transform: translateX(5px);
+            75% {
+                transform: rotate(10deg);
+            }
+            100% {
+                transform: rotate(0deg);
             }
         }
         
         .error-code {
             font-size: 8rem;
             font-weight: 900;
-            color: #ff7675;
+            color: #e74c3c;
             margin: 0;
             line-height: 1;
             text-shadow: 2px 2px 0 #e2e2e2;
@@ -87,18 +90,18 @@ Content-Type: text/html
         .btn {
             display: inline-block;
             color: white;
-            background: #ff7675;
+            background: #e74c3c;
             padding: 12px 24px;
             border-radius: 50px;
             text-decoration: none;
             font-weight: 600;
             transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(255, 118, 117, 0.4);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
         }
         
         .btn:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(255, 118, 117, 0.5);
+            box-shadow: 0 8px 25px rgba(231, 76, 60, 0.5);
         }
         
         .graphic {
@@ -108,64 +111,83 @@ Content-Type: text/html
             position: relative;
         }
         
-        .file {
-            width: 90px;
-            height: 110px;
-            background: #ff7675;
+        .cog {
+            width: 100px;
+            height: 100px;
+            background: #e74c3c;
+            border-radius: 50%;
             position: absolute;
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            border-radius: 5px;
-            box-shadow: 0 10px 25px rgba(255, 118, 117, 0.5);
-            animation: shake 1.5s ease-in-out 2s;
+            box-shadow: 0 10px 25px rgba(231, 76, 60, 0.5);
+            animation: rotate 5s ease-in-out infinite;
         }
         
-        .file::before {
+        .cog::before, .cog::after {
             content: "";
             position: absolute;
-            width: 40px;
-            height: 25px;
-            background: white;
-            border-radius: 3px;
-            top: 45px;
-            left: 25px;
-        }
-        
-        .file::after {
-            content: "?";
-            position: absolute;
-            color: #ff7675;
-            font-size: 20px;
-            font-weight: bold;
-            top: 45px;
-            left: 43px;
-        }
-        
-        .mark {
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            background: #ff7675;
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
-            color: white;
-            text-align: center;
-            line-height: 30px;
-            font-weight: bold;
-            font-size: 20px;
-            top: 0;
-            right: 20px;
-            box-shadow: 0 5px 15px rgba(255, 118, 117, 0.4);
-            transform: translateY(0);
-            animation: float 3s ease-in-out infinite;
+            background: white;
+            top: 25px;
+            left: 20px;
+            box-shadow: 40px 0 0 white;
         }
         
-        @keyframes float {
-            0%, 100% {
-                transform: translateY(0);
+        .cog::after {
+            width: 40px;
+            height: 10px;
+            border-radius: 5px;
+            top: 60px;
+            left: 30px;
+            box-shadow: none;
+        }
+        
+        .spark {
+            position: absolute;
+            background: #ffdd59;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            opacity: 0;
+        }
+        
+        .spark:nth-child(1) {
+            top: 20px;
+            left: 60px;
+            animation: spark 2s 0.1s infinite;
+        }
+        
+        .spark:nth-child(2) {
+            top: 60px;
+            left: 100px;
+            animation: spark 2s 0.4s infinite;
+        }
+        
+        .spark:nth-child(3) {
+            top: 100px;
+            left: 50px;
+            animation: spark 2s 0.7s infinite;
+        }
+        
+        @keyframes spark {
+            0% {
+                opacity: 0;
+                transform: scale(0);
             }
-            50% {
-                transform: translateY(-10px);
+            20% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            60% {
+                opacity: 0;
+                transform: scale(1.5);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1.5);
             }
         }
     </style>
@@ -173,12 +195,14 @@ Content-Type: text/html
 <body>
     <div class="container">
         <div class="graphic">
-            <div class="file"></div>
-            <div class="mark">!</div>
+            <div class="cog"></div>
+            <div class="spark"></div>
+            <div class="spark"></div>
+            <div class="spark"></div>
         </div>
-        <div class="error-code">400</div>
-        <h1>Bad Request</h1>
-        <p>Your browser sent a request that this server couldn't understand.</p>
+        <div class="error-code">500</div>
+        <h1>Internal Server Error</h1>
+        <p>Oops! Something went wrong on our end. Our team has been notified.</p>
         <a href="/" class="btn">Go Home</a>
     </div>
 </body>

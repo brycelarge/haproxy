@@ -1,0 +1,245 @@
+HTTP/1.0 429 Too Many Requests
+Cache-Control: no-cache
+Connection: close
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>429 Too Many Requests</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        @keyframes movingBackground {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: movingBackground 15s ease infinite;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            transform: translateY(0);
+            animation: fadeIn 0.8s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            0% {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .error-code {
+            font-size: 8rem;
+            font-weight: 900;
+            color: #fff;
+            margin: 0;
+            line-height: 1;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+        
+        h1 {
+            color: #fff;
+            margin: 20px 0;
+            font-size: 2rem;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        p {
+            line-height: 1.6;
+            color: #fff;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn {
+            display: inline-block;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 12px 24px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .traffic-light {
+            width: 80px;
+            height: 200px;
+            background: #333;
+            border-radius: 20px;
+            margin: 0 auto 30px;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            padding: 15px 0;
+        }
+        
+        .light {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #555;
+            margin: 10px auto;
+            position: relative;
+        }
+        
+        .light.red {
+            background: #ff6b6b;
+            box-shadow: 0 0 20px #ff6b6b, 0 0 40px #ff6b6b;
+            animation: pulse 1s alternate infinite;
+        }
+        
+        .light.yellow {
+            background: #feca57;
+        }
+        
+        .light.green {
+            background: #5ed67b;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 20px #ff6b6b, 0 0 40px #ff6b6b;
+            }
+            100% {
+                box-shadow: 0 0 25px #ff6b6b, 0 0 50px #ff6b6b;
+            }
+        }
+        
+        .cars {
+            position: relative;
+            height: 50px;
+            width: 300px;
+            margin: 0 auto;
+        }
+        
+        .car {
+            position: absolute;
+            width: 60px;
+            height: 30px;
+            background: #fff;
+            border-radius: 10px;
+            top: 10px;
+        }
+        
+        .car:before {
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 8px;
+            background: #333;
+            top: 7px;
+            left: 10px;
+            border-radius: 3px;
+        }
+        
+        .car:after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #ff6b6b;
+            top: 7px;
+            right: 5px;
+            border-radius: 50%;
+        }
+        
+        .car:nth-child(1) {
+            left: 0;
+            background: #74b9ff;
+            animation: carStop 2s forwards;
+        }
+        
+        .car:nth-child(2) {
+            left: 70px;
+            background: #ff7675;
+            animation: carStop 2s 0.5s forwards;
+        }
+        
+        .car:nth-child(3) {
+            left: 140px;
+            background: #55efc4;
+            animation: carStop 2s 1s forwards;
+        }
+        
+        .car:nth-child(4) {
+            left: 210px;
+            background: #ffeaa7;
+            animation: carStop 2s 1.5s forwards;
+        }
+        
+        @keyframes carStop {
+            0% {
+                transform: translateX(30px);
+                opacity: 0;
+            }
+            40% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="traffic-light">
+            <div class="light red"></div>
+            <div class="light yellow"></div>
+            <div class="light green"></div>
+        </div>
+        
+        <div class="cars">
+            <div class="car"></div>
+            <div class="car"></div>
+            <div class="car"></div>
+            <div class="car"></div>
+        </div>
+        
+        <div class="error-code">429</div>
+        <h1>Whoa! Traffic Jam</h1>
+        <p>You've sent too many requests! Time to slow down and wait a bit.</p>
+        <a href="/" class="btn">Back to Cruising</a>
+    </div>
+</body>
+</html>

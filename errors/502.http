@@ -1,0 +1,400 @@
+HTTP/1.0 502 Bad Gateway
+Cache-Control: no-cache
+Connection: close
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>502 Bad Gateway</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        @keyframes space {
+            0% {
+                transform: rotate(0deg) scale(1);
+            }
+            50% {
+                transform: rotate(180deg) scale(1.1);
+            }
+            100% {
+                transform: rotate(360deg) scale(1);
+            }
+        }
+        
+        @keyframes twinkle {
+            0%, 100% {
+                opacity: 0.2;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0e29;
+            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .stars {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: white;
+            border-radius: 50%;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(5px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2), 0 0 20px rgba(78, 115, 248, 0.5);
+            text-align: center;
+            transform: translateY(0);
+            animation: fadeIn 0.8s ease-out;
+            border: 1px solid rgba(78, 115, 248, 0.2);
+            z-index: 2;
+        }
+        
+        @keyframes fadeIn {
+            0% {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .error-code {
+            font-size: 8rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, #4e73f8, #9152ff, #ff5eec);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            line-height: 1;
+            text-shadow: 0 0 20px rgba(78, 115, 248, 0.5);
+        }
+        
+        h1 {
+            color: #fff;
+            margin: 20px 0;
+            font-size: 2rem;
+            text-shadow: 0 0 10px rgba(78, 115, 248, 0.5);
+        }
+        
+        p {
+            line-height: 1.6;
+            color: #b8c0ff;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+        
+        .btn {
+            display: inline-block;
+            color: #fff;
+            background: linear-gradient(45deg, #4e73f8, #9152ff);
+            padding: 12px 24px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(78, 115, 248, 0.4);
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(78, 115, 248, 0.6);
+        }
+        
+        .space-scene {
+            position: relative;
+            height: 200px;
+            width: 100%;
+            margin: 0 auto 30px;
+        }
+        
+        .planet {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(45deg, #4e73f8, #9152ff);
+            border-radius: 50%;
+            position: absolute;
+            left: 30%;
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 30px rgba(78, 115, 248, 0.7);
+        }
+        
+        .planet:before {
+            content: '';
+            position: absolute;
+            width: 90px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            top: 30px;
+            left: -5px;
+            border-radius: 50%;
+            transform: rotate(-30deg);
+        }
+        
+        .satellite {
+            width: 40px;
+            height: 20px;
+            background: #fff;
+            border-radius: 10px;
+            position: absolute;
+            right: 25%;
+            top: 60%;
+            transform: rotate(-30deg);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+        }
+        
+        .satellite:before {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 8px;
+            background: linear-gradient(90deg, transparent, #f84e4e, transparent);
+            top: 30px;
+            left: -5px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px #f84e4e;
+            animation: satelliteFail 2s linear infinite;
+        }
+        
+        .satellite:after {
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4e73f8;
+            top: 2px;
+            left: 12px;
+            box-shadow: 0 0 5px #4e73f8;
+        }
+        
+        @keyframes satelliteFail {
+            0% {
+                opacity: 0.3;
+                transform: translateY(0) scaleX(0.8);
+            }
+            50% {
+                opacity: 1;
+                transform: translateY(2px) scaleX(1);
+            }
+            100% {
+                opacity: 0.3;
+                transform: translateY(0) scaleX(0.8);
+            }
+        }
+        
+        .meteor {
+            position: absolute;
+            width: 3px;
+            height: 3px;
+            background: white;
+            border-radius: 50%;
+            animation: meteor 3s linear infinite;
+        }
+        
+        .meteor:before {
+            content: '';
+            position: absolute;
+            width: 50px;
+            height: 1px;
+            background: linear-gradient(90deg, white, transparent);
+            top: 1px;
+            right: 1px;
+            transform: rotate(-45deg);
+            transform-origin: right;
+        }
+        
+        @keyframes meteor {
+            0% {
+                top: -10%;
+                left: 110%;
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                top: 120%;
+                left: -10%;
+                opacity: 0;
+            }
+        }
+        
+        .connection {
+            position: absolute;
+            width: 150px;
+            height: 2px;
+            background: linear-gradient(90deg, #4e73f8, #f84e4e);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .connection:before, .connection:after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #f84e4e;
+            border-radius: 50%;
+            top: -4px;
+            animation: pulse 1s linear infinite;
+        }
+        
+        .connection:before {
+            left: -5px;
+            background: #4e73f8;
+        }
+        
+        .connection:after {
+            right: -5px;
+            background: #f84e4e;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 8px 2px rgba(255, 94, 94, 0.5);
+                opacity: 0.8;
+            }
+            50% {
+                box-shadow: 0 0 12px 4px rgba(255, 94, 94, 0.8);
+                opacity: 1;
+            }
+        }
+        
+        .broken {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30px;
+            height: 30px;
+            animation: rotate 5s linear infinite;
+        }
+        
+        .broken:before, .broken:after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: rgba(255, 94, 94, 0.8);
+            top: 10px;
+            left: 10px;
+            border-radius: 50%;
+            animation: blink 0.5s alternate infinite;
+        }
+        
+        @keyframes rotate {
+            0% {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+            100% {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+        
+        @keyframes blink {
+            0% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="stars" id="stars"></div>
+    <div class="container">
+        <div class="space-scene">
+            <div class="planet"></div>
+            <div class="connection">
+                <div class="broken"></div>
+            </div>
+            <div class="satellite"></div>
+            <div class="meteor"></div>
+        </div>
+        
+        <div class="error-code">502</div>
+        <h1>Gateway Lost in Space</h1>
+        <p>Houston, we have a problem! The satellite connection to our server has been disrupted. Our cosmic engineers are on it.</p>
+        <a href="/" class="btn">Return to Earth</a>
+    </div>
+    
+    <script>
+        // Create stars
+        function createStars() {
+            const stars = document.getElementById('stars');
+            const count = 200;
+            
+            for (let i = 0; i < count; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                // Random position
+                const x = Math.random() * 100;
+                const y = Math.random() * 100;
+                
+                star.style.left = `${x}%`;
+                star.style.top = `${y}%`;
+                
+                // Random size
+                const size = Math.random() * 3;
+                star.style.width = `${size}px`;
+                star.style.height = `${size}px`;
+                
+                // Random twinkle animation
+                star.style.animation = `twinkle ${Math.random() * 5 + 3}s ease-in-out infinite`;
+                star.style.animationDelay = `${Math.random() * 5}s`;
+                
+                stars.appendChild(star);
+            }
+        }
+        
+        // Run star creation on load
+        window.onload = function() {
+            createStars();
+        };
+    </script>
+</body>
+</html>
