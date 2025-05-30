@@ -74,13 +74,19 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 docker run -d \
   --name haproxy \
   -p 80:80 \
-  -p 443:443 \
-  -v /path/to/config:/config \
-  -e CF_Token=your-cloudflare-api-token \
-  -e CF_Account_ID=your-cloudflare-account-id \
-  -e CF_Zone_ID=your-cloudflare-zone-id \
-  -e ACME_EMAIL=your-email@example.com \
-  brycelarge/haproxy:latest
+  -p 443:443/tcp \
+  -p 8443:8443/udp \
+  --network=host \
+  -v /path/to/data:/config \
+  -v /path/to/data/logs:/var/log/haproxy \
+  -v /path/to/data/deployed-certs:/etc/haproxy/certs \
+  -e "MIXED_SSL_MODE=true" \
+  -e "HA_DEBUG=false" \
+  -e "HAPROXY_THREADS=16" \
+  -e "CONFIG_AUTO_GENERATE=true" \
+  -e "ACME_CHALLENGE_TYPE=http" \
+  -e "ACME_EMAIL=your-email@example.com" \
+  docker.io/brycelarge/haproxy:latest
 ```
 
 ### Using Docker Compose
@@ -89,20 +95,25 @@ docker run -d \
 version: '3.8'
 services:
   haproxy:
-    image: brycelarge/haproxy:latest
+    image: docker.io/brycelarge/haproxy:latest
+    container_name: haproxy
+    restart: unless-stopped
+    network_mode: host  # Optional: Use host networking if needed
     ports:
       - "80:80"
-      - "443:443"
+      - "443:443/tcp"
+      - "8443:8443/udp"
     volumes:
-      - ./config:/config
+      - ./data:/config
+      - ./data/logs:/var/log/haproxy
+      - ./data/deployed-certs:/etc/haproxy/certs
     environment:
-      - CF_Token=${CF_Token}
-      - CF_Account_ID=${CF_Account_ID}
-      - CF_Zone_ID=${CF_Zone_ID}
-      - ACME_EMAIL=${ACME_EMAIL}
-      - ACME_CHALLENGE_TYPE=dns_cf
+      - MIXED_SSL_MODE=true
       - HA_DEBUG=false
-    restart: unless-stopped
+      - HAPROXY_THREADS=16
+      - CONFIG_AUTO_GENERATE=true
+      - ACME_CHALLENGE_TYPE=http
+      - ACME_EMAIL=your-email@example.com
 ```
 
 ## YAML Configuration Examples
@@ -358,100 +369,11 @@ The YAML configuration file is used to define the HAProxy configuration. The fil
 
 ### Full YAML Example
 
-A comprehensive example configuration file is included in the repository as `haproxy.yaml.example`. This example demonstrates all the major features including:
-
-- Global and default settings
-- Multiple frontend types
-- Domain pattern matching
-- Domain to backend mapping
-- IP-restricted services
-- HTTP/2 configuration (both backend-level and per-host)
-- Health checks with various options
-- SSL backend configuration
-- Advanced options like backup servers
-
-You can use this as a starting point for your own configuration:
+A comprehensive example configuration file is included in the repository as `haproxy.yaml.example`. This file demonstrates all the major features and can be used as a starting point for your own configuration:
 
 ```bash
 cp haproxy.yaml.example /config/haproxy.yaml
 # Then edit to match your environment
-```
-
-Here's a preview of what's included in the example file:
-
-```yaml
-global:
-  - maxconn 10000
-  - tune.bufsize 32768
-  - tune.maxrewrite 8192
-  - tune.ssl.cachesize 100000
-  - tune.ssl.lifetime 300
-
-defaults:
-  - option http-keep-alive
-  - timeout client 30s
-  - timeout connect 5s
-  - timeout server 240s
-  - timeout tunnel 43200s # 12 hour timeout for websocket
-
-frontend:
-  http:
-    - default_backend web-default
-  https:
-    - default_backend ssl-passthrough
-  https-offloading-ip-protection:
-    - default_backend protected-service
-    - acl network_allowed_src src 192.168.1.100
-    - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
-    - http-request deny unless network_allowed_src or network_allowed_xff
-
-https_frontend_rules:
-  - backend: frontend-offloading
-    domains:
-      - .example.com
-      - .company.org
-
-domain_mappings:
-  - domain: www.example.com
-    frontend: https-offloading
-    backend: web-service
-
-  - domain: api.example.com
-    frontend: https-offloading
-    backend: api-service
-
-backends:
-  - name: web-service
-    mode: http
-    enable_h2: true
-    hosts:
-      - "192.168.1.30:80"
-
-  - name: api-service
-    mode: http
-    enable_h2: true
-    options:
-      - "httpchk GET /health"
-    http_check:
-      - "expect status 200"
-    hosts:
-      - host: "192.168.1.30:8090"
-        check:
-          type: tcp
-          interval: 1000
-          fall: 2
-          rise: 1
-      - "192.168.1.30:80 backup"
-```
-
-  acme_backend:
-    - mode http
-    - timeout_connect: 5s
-    - timeout_server: 30s
-    hosts:
-      - name: acme
-        address: "127.0.0.1:8080"
-        check: false
 ```
 
 ## Environment Variables
@@ -504,30 +426,9 @@ security_options:
 
 ## ACME Configuration
 
-### DNS Challenge Setup
+This container includes automatic HTTPS certificate management using ACME protocol (Let's Encrypt). Two challenge types are supported:
 
-1. **Create Cloudflare API Token**:
-   - Go to Cloudflare Dashboard → Profile → API Tokens
-   - Create token with `Zone:DNS:Edit` permissions
-   - Note down the token, Account ID, and Zone ID
-
-
-2. **Configure Environment**:
-   - Take the information from steps taken above and add it to your config/acme/acme.sh.env file.
-
-#### config/acme/acme.sh.env file will be generated on the first boot when acme is installed, then shutdown the container and add the above to the file in the format shown below.
-
-```
-export CF_Token=your_token
-export CF_Account_ID=your_cf_account_id
-export export CF_Zone_ID=your_cf_zone_id
-
-# Alternative Cloudflare settings
-export CF_Key=your_cf_key
-export CF_Email=your_cf_email
-```
-
-### HTTP Challenge Setup
+### HTTP Challenge Setup (Recommended)
 
 1. **Configure Environment**:
    ```bash
@@ -540,25 +441,54 @@ export CF_Email=your_cf_email
    -p 80:80
    ```
 
+3. **How it Works**:
+   - The container automatically configures HAProxy to handle ACME HTTP-01 challenges
+   - Certificates are automatically renewed before expiration
+   - No additional configuration needed beyond specifying domains in your YAML file
+
+### DNS Challenge Setup (Alternative)
+
+For scenarios where port 80 cannot be exposed, DNS challenge is available. Cloudflare DNS is supported:
+
+1. **Create Cloudflare API Token**:
+   - Go to Cloudflare Dashboard → Profile → API Tokens
+   - Create token with `Zone:DNS:Edit` permissions
+   - Note down the token, Account ID, and Zone ID
+
+2. **Configure Environment**:
+   ```bash
+   -e ACME_CHALLENGE_TYPE=dns_cf \
+   -e ACME_EMAIL=your-email@example.com
+   ```
+
+3. **Create acme.sh.env File**:
+   - The file will be generated on first boot at `/config/acme/acme.sh.env`
+   - Shutdown the container and add your Cloudflare credentials:
+
+```
+export CF_Token=your_token
+export CF_Account_ID=your_cf_account_id
+export CF_Zone_ID=your_cf_zone_id
+
+# Alternative Cloudflare settings (if not using token)
+# export CF_Key=your_cf_key
+# export CF_Email=your_cf_email
+```
+
 ### Domain Configuration
 
-To specify domains for ACME certificate management, you need to:
+To specify domains for ACME certificate management, you need to define them in your YAML configuration:
 
-1. Define your domains in the YAML configuration
-2. Set up the appropriate ACME challenge method
-
-#### Example with Cloudflare DNS Challenge
 ```yaml
 # /config/haproxy.yaml
-frontend:
-  https:
-    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
-    - bind "quic4@:443" ssl crt /config/certs/ alpn h3
-    - mode http
-    - acl host_app1 hdr(host) -i app1.example.com
-    - acl host_app2 hdr(host) -i app2.example.com
-    - use_backend app1_backend if host_app1
-    - use_backend app2_backend if host_app2
+domain_mappings:
+  - domain: app1.example.com
+    frontend: https-offloading
+    backend: app1-backend
+
+  - domain: app2.example.com
+    frontend: https-offloading
+    backend: app2-backend
 ```
 
 ```bash
