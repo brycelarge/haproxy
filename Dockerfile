@@ -123,6 +123,7 @@ RUN \
         inotify-tools \
         socat \
         libcap \
+        iptables \
         tzdata && \
     echo "**** Make rsyslog diretory ****" && \
     mkdir -p \

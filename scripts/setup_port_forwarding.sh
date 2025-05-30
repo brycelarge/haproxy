@@ -8,13 +8,14 @@ source /scripts/debug.sh
 
 if [ "${MIXED_SSL_MODE}" = "true" ]; then
     echo "[port-forwarding] MIXED_SSL_MODE is enabled, setting up UDP port forwarding from 443 to 8443..." | ts '%Y-%m-%d %H:%M:%S'
-    
+
     # Check if iptables is available
     if ! command -v iptables &> /dev/null; then
-        echo "[port-forwarding] Error: iptables is not installed. Cannot set up port forwarding." | ts '%Y-%m-%d %H:%M:%S'
-        exit 1
+        echo "[port-forwarding] Warning: iptables is not installed. HTTP/3 may not work correctly with MIXED_SSL_MODE." | ts '%Y-%m-%d %H:%M:%S'
+        echo "[port-forwarding] Continuing without port forwarding..." | ts '%Y-%m-%d %H:%M:%S'
+        exit 0
     fi
-    
+
     # Check if the rule already exists to avoid duplicates
     if ! iptables -t nat -C PREROUTING -p udp --dport 443 -j REDIRECT --to-port 8443 2>/dev/null; then
         # Add the port forwarding rule
@@ -26,7 +27,7 @@ if [ "${MIXED_SSL_MODE}" = "true" ]; then
     else
         echo "[port-forwarding] Port forwarding rule already exists" | ts '%Y-%m-%d %H:%M:%S'
     fi
-    
+
     # List current rules for verification
     echo "[port-forwarding] Current NAT rules:" | ts '%Y-%m-%d %H:%M:%S'
     iptables -t nat -L -n -v | grep -i redirect | ts '%Y-%m-%d %H:%M:%S'
