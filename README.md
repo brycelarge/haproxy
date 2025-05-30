@@ -12,6 +12,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 3. [YAML Configuration Examples](#yaml-configuration-examples)
 4. [Configuration](#configuration)
     - [YAML Structure](#yaml-structure)
+    - [YAML to Config Conversion](#yaml-to-config-conversion)
     - [Full YAML Example](#full-yaml-example)
 5. [Environment Variables](#environment-variables)
 6. [Volumes](#volumes)
@@ -23,26 +24,47 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
     - [DNS Challenge Setup](#dns-challenge-setup)
     - [HTTP Challenge Setup](#http-challenge-setup)
     - [Domain Configuration](#domain-configuration)
-10. [Advanced Usage](#advanced-usage)
+10. [Architecture](#architecture)
+    - [Service Structure](#service-structure)
+    - [ACME HTTP-01 Challenge Implementation](#acme-http-01-challenge-implementation)
+11. [HAProxy 3.2 Features](#haproxy-32-features)
+    - [HTTP/2 and QUIC Improvements](#http2-and-quic-improvements)
+    - [Performance Optimizations](#performance-optimizations)
+    - [Implementation Details](#implementation-details)
+12. [Advanced Usage](#advanced-usage)
     - [Custom Certificates](#custom-certificates)
     - [Healthcheck Configuration](#healthcheck-configuration)
     - [Firewall Port Forwarding (MIXED_SSL_MODE)](#firewall-port-forwarding-mixed_ssl_mode)
-11. [Building the Image](#building-the-image)
-12. [Troubleshooting](#troubleshooting)
+13. [Building the Image](#building-the-image)
+14. [Troubleshooting](#troubleshooting)
 
 ## Features
 
-- HAProxy 2.4+ with QUIC protocol support
+### HAProxy 3.2 Features
+- QUIC/HTTP3 protocol support
+- Enhanced performance with optimized buffer handling
+- HTTP/2 idle connection checking with `idle-ping`
+- Connection reuse for health checks with `check-reuse-pool`
+- Improved TLS performance with optimized SSL session cache
+- TCP inspection improvements for complex TLS connections
+
+### Certificate Management
 - Automatic SSL/TLS certificate management via acme.sh
 - Support for both Cloudflare DNS and HTTP ACME challenges
-- YAML-based configuration system
-- Dynamic backend configuration
-- Comprehensive healthcheck system
+- Custom stick table implementation for HTTP-01 challenge validation
+- Real-time certificate updates without HAProxy restart
+- Automatic certificate renewal
+
+### Configuration System
+- YAML-based configuration with automatic conversion
+- Dynamic backend configuration with multiple host support
+- Comprehensive health check system with per-host configuration
+- IP-restricted frontends for protected services
+
+### Container Features
 - Alpine Linux base for minimal footprint
 - s6-overlay for reliable process management
-- Real-time SSL certificate updates without restart
-- Support for multiple domains and certificates
-- Automatic certificate renewal
+- Structured service dependencies for proper startup sequence
 
 ## Quick Start
 
@@ -125,7 +147,7 @@ https_frontend_rules:
     domains:
       - .example.com
       - .company.com
-  
+
   # IP-protected domains
   - backend: frontend-offloading-ip-protection
     match_type: ssl_fc_sni
@@ -189,7 +211,6 @@ backends:
     server_address: 192.168.1.11:443
     ssl: true
     ssl_verify: false
-```
 
 ### Configuration Sections Explained
 
@@ -230,7 +251,9 @@ domain_mappings:
 backends:
   - name: web-service
     mode: http
-    server_address: 192.168.1.10:80
+    enable_h2: true  # Enable HTTP/2 with idle connection checks
+    hosts:
+      - "192.168.1.10:80"
 ```
 
 2. **IP-Restricted Service**
@@ -243,17 +266,83 @@ domain_mappings:
 backends:
   - name: admin-service
     mode: http
-    server_address: 192.168.1.20:8080
+    check:
+      type: http
+      uri: /health
+      interval: 2000
+      fall: 3
+      rise: 2
+    hosts:
+      - "192.168.1.20:8080"
 ```
 
 3. **SSL Backend**
 ```yaml
 backends:
+  - name: web-service
+    mode: http
+    enable_h2: true  # Automatically adds idle-ping 30s
+    hosts:
+      - "192.168.1.10:80"
+```
+
+4. **HTTP/2 Backend with Per-Host Configuration**
+```yaml
+backends:
+  - name: advanced-service
+    mode: http
+    enable_h2: true  # Default for all hosts that don't specify it
+    options:
+      - "httpchk GET /health"
+      - "allbackups"
+    http_check:
+      - "expect status 200"
+    hosts:
+      - host: "192.168.1.10:8090"  # Inherits enable_h2 from backend
+        check:
+          type: tcp
+          interval: 1000
+          fall: 2
+          rise: 1
+          slowstart: "10s"
+      - host: "192.168.1.10:8081"
+        enable_h2: false  # Override backend setting - HTTP/2 disabled for this host
+        check:
+          type: http
+          uri: "/health"
+      - "192.168.1.10:80 backup"  # Simple string format inherits backend enable_h2
+```
+
+5. **Mixed HTTP/2 Configuration**
+```yaml
+backends:
+  - name: mixed-backend
+    mode: http
+    enable_h2: false  # HTTP/2 disabled by default
+    hosts:
+      - host: "192.168.1.10:8090"  # No HTTP/2 (inherits from backend)
+      - host: "192.168.1.10:8081"
+        enable_h2: true  # Explicitly enables HTTP/2 for this host only
+      - "192.168.1.10:80"  # No HTTP/2 (inherits from backend)
+```
+
+5. **Multiple Hosts with Backup**
+```yaml
+backends:
   - name: secure-service
     mode: http
-    server_address: 192.168.1.30:443
     ssl: true
     ssl_verify: false
+    options:
+      - "allbackups"  # Optional: if all servers marked as backup should be used together
+    hosts:
+      - "192.168.1.30:443"  # Primary server
+      - "192.168.1.31:443 backup"  # Simple backup syntax
+      - host: "192.168.1.32:443"  # Object syntax with backup
+        backup: true
+      - host: "192.168.1.33:443"  # Object syntax with weight
+        backup: true
+        weight: 10  # Higher weight gets more traffic when active
 ```
 
 ## Configuration
@@ -269,57 +358,91 @@ The YAML configuration file is used to define the HAProxy configuration. The fil
 
 ### Full YAML Example
 
+A comprehensive example configuration file is included in the repository as `haproxy.yaml.example`. This example demonstrates all the major features including:
+
+- Global and default settings
+- Multiple frontend types
+- Domain pattern matching
+- Domain to backend mapping
+- IP-restricted services
+- HTTP/2 configuration (both backend-level and per-host)
+- Health checks with various options
+- SSL backend configuration
+- Advanced options like backup servers
+
+You can use this as a starting point for your own configuration:
+
+```bash
+cp haproxy.yaml.example /config/haproxy.yaml
+# Then edit to match your environment
+```
+
+Here's a preview of what's included in the example file:
+
 ```yaml
-# /config/haproxy.yaml
 global:
-  - tune.ssl.default-dh-param 2048
-  - tune.quic.socket-owner haproxy
-  - ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
-  - ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+  - maxconn 10000
+  - tune.bufsize 32768
+  - tune.maxrewrite 8192
+  - tune.ssl.cachesize 100000
+  - tune.ssl.lifetime 300
 
 defaults:
+  - option http-keep-alive
+  - timeout client 30s
   - timeout connect 5s
-  - timeout client 50s
-  - timeout server 50s
-  - option forwardfor
-  - option http-server-close
+  - timeout server 240s
+  - timeout tunnel 43200s # 12 hour timeout for websocket
 
 frontend:
   http:
-    - bind "${HAPROXY_BIND_IP}:80"
-    - mode http
-    - option httplog
-    - option forwardfor
-    - acl is_acme path_beg /.well-known/acme-challenge/
-    - use_backend acme_backend if is_acme
-    - redirect scheme https if !is_acme
-
+    - default_backend web-default
   https:
-    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
-    - bind "quic4@:443" ssl crt /config/certs/ alpn h3
-    - mode http
-    - http-response set-header alt-svc "h3=\":443\"; ma=86400"
-    - option httplog
-    - option forwardfor
-    - http-request set-header X-Forwarded-Proto https
+    - default_backend ssl-passthrough
+  https-offloading-ip-protection:
+    - default_backend protected-service
+    - acl network_allowed_src src 192.168.1.100
+    - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
+    - http-request deny unless network_allowed_src or network_allowed_xff
 
-backend:
-  app1_backend:
-    - mode http
-    - timeout_connect: 5s
-    - timeout_server: 30s
+https_frontend_rules:
+  - backend: frontend-offloading
+    domains:
+      - .example.com
+      - .company.org
+
+domain_mappings:
+  - domain: www.example.com
+    frontend: https-offloading
+    backend: web-service
+
+  - domain: api.example.com
+    frontend: https-offloading
+    backend: api-service
+
+backends:
+  - name: web-service
+    mode: http
     enable_h2: true
-    ssl: true
-    ssl_verify: true
     hosts:
-      - name: web1
-        address: "192.168.1.10:8443"
-        check: true
-        ssl: true
-      - name: web2
-        address: "192.168.1.11:8443"
-        check: true
-        ssl: true
+      - "192.168.1.30:80"
+
+  - name: api-service
+    mode: http
+    enable_h2: true
+    options:
+      - "httpchk GET /health"
+    http_check:
+      - "expect status 200"
+    hosts:
+      - host: "192.168.1.30:8090"
+        check:
+          type: tcp
+          interval: 1000
+          fall: 2
+          rise: 1
+      - "192.168.1.30:80 backup"
+```
 
   acme_backend:
     - mode http
@@ -490,6 +613,80 @@ The container will automatically:
 > - Domains must be publicly accessible for ACME verification
 > - For Cloudflare DNS challenge, ensure your API token has the correct zone permissions
 > - For HTTP challenge, port 80 must be accessible from the internet
+
+## Architecture
+
+### Service Structure
+
+This image uses s6-overlay to manage service dependencies and startup sequence:
+
+1. **acme-setup**: Initializes the ACME environment
+   - Downloads DH parameters for TLS
+   - Installs acme.sh if not present
+   - Registers with Let's Encrypt if needed
+   - Configures cron jobs for renewals
+
+2. **haproxy-config**: Generates HAProxy configuration
+   - Converts YAML to HAProxy config when `CONFIG_AUTO_GENERATE=true`
+   - Uses `/scripts/generate_haproxy_config.sh` for conversion
+
+3. **rsyslog**: Sets up logging
+   - Creates log socket at `/var/lib/haproxy/dev/log`
+   - Configures log rotation
+
+4. **haproxy**: Main HAProxy service
+   - Depends on haproxy-config and rsyslog
+   - Runs with proper capabilities for binding to privileged ports
+
+5. **acme**: Certificate management
+   - Runs after HAProxy is fully operational
+   - Checks for missing certificates
+   - Issues/renews certificates as needed
+   - Updates HAProxy without restart
+
+### ACME HTTP-01 Challenge Implementation
+
+The container uses a custom stick table implementation for HTTP-01 challenges:
+
+1. Domains are added to a stick table with `http_req_cnt` counter
+2. ACLs check if the domain exists in the stick table
+3. When a challenge arrives, HAProxy validates it against the stick table
+4. This allows for dynamic certificate issuance without pre-configuration
+
+## HAProxy 3.2 Features
+
+This image leverages several HAProxy 3.2 performance and security enhancements:
+
+### HTTP/2 and QUIC Improvements
+
+- **HTTP/2 Idle Connection Checking**: The `idle-ping 30s` parameter automatically checks and closes unresponsive HTTP/2 connections
+- **QUIC Protocol Support**: Native HTTP/3 support with optimized UDP handling
+- **Connection Reuse for Health Checks**: The `check-reuse-pool` parameter reduces connection overhead by reusing idle connections
+
+### Performance Optimizations
+
+- **Enhanced TLS Performance**: Optimized SSL session caching with `tune.ssl.cachesize 100000` and `tune.ssl.lifetime 300`
+- **TCP Inspection Improvements**: Increased inspection delay with `tcp-request inspect-delay 10s` for better TLS handling
+- **Buffer Tuning**: Optimized buffer sizes with `tune.bufsize` and `tune.maxrewrite`
+
+### Implementation Details
+
+HTTP/2 can be configured with maximum flexibility:
+
+1. **Backend Level**: Set `enable_h2: true|false` at the backend level as a default for all hosts
+2. **Host Level**: Individual hosts can override the backend setting with their own `enable_h2: true|false`
+3. **Mixed Configuration**: You can have some hosts with HTTP/2 and others without in the same backend
+
+This works in both directions:
+- Enable HTTP/2 at backend level, disable for specific hosts
+- Disable HTTP/2 at backend level, enable for specific hosts
+
+When HTTP/2 is enabled for a host, the script adds:
+```
+alpn h2 check-reuse-pool idle-ping 30s
+```
+
+This combines HTTP/2 protocol negotiation with idle connection checking and health check connection reuse. The flexible per-host configuration allows you to fine-tune HTTP/2 usage based on each server's capabilities.
 
 ## Advanced Usage
 
