@@ -335,12 +335,6 @@ frontend https-offloading
     http-response set-header X-XSS-Protection "1; mode=block"
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
-    # Experimental headers
-    http-response set-header Content-Security-Policy "default-src 'self'; frame-ancestors 'self'"  # ADDED: Content-Security-Policy header
-    http-response set-header X-Content-Type-Options nosniff  # ADDED: Prevent MIME type sniffing
-    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"  # ADDED: HSTS header
-    http-response set-header X-Frame-Options SAMEORIGIN  # ADDED: Prevent clickjacking
-    http-response set-header Referrer-Policy strict-origin-when-cross-origin  # ADDED: Control referrer information
 
     http-response set-header alt-svc "${ALT_SVC}"
 
