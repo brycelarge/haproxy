@@ -159,7 +159,6 @@ RUN \
     chown haproxy:haproxy /var/lib/haproxy/dev/log && \
     chmod 755 /var/lib/haproxy/dev/log && \
     setcap 'cap_net_bind_service=+ep' /usr/local/sbin/haproxy && \
-    setcap 'cap_net_admin=+ep' /sbin/iptables && \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \
     adduser \

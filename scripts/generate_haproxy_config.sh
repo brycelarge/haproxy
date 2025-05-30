@@ -70,9 +70,9 @@ echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
 # Always use port 443 for the ALT_SVC header since we handle port forwarding internally
 if [ "$H3_29_SUPPORT" = "true" ]; then
-    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}, h3-29=\":443\"; ma=3600"
+    ALT_SVC="h3=\\\"443\\\"; ma=${QUIC_MAX_AGE}, h3-29=\\\"443\\\"; ma=3600"
 else
-    ALT_SVC="h3=\":443\"; ma=${QUIC_MAX_AGE}"
+    ALT_SVC="h3=\\\"443\\\"; ma=${QUIC_MAX_AGE}"
 fi
 
 if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
