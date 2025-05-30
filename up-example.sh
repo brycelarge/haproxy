@@ -1,33 +1,36 @@
 #!/bin/bash
 
+# Define variables
+NAME="haproxy"
+DIR="$(pwd)"
+
 # Create required directories if they don't exist
-mkdir -p ./config /var/log/haproxy
+mkdir -p $DIR/data $DIR/data/logs $DIR/data/deployed-certs
 
 # Stop and remove existing container if it exists
-docker stop haproxy 2>/dev/null
-docker rm haproxy 2>/dev/null
+docker stop $NAME 2>/dev/null
+docker rm $NAME 2>/dev/null
 
 # Run HAProxy container
 docker run -d \
-    --name haproxy \
+    --name=$NAME \
     --restart unless-stopped \
     --security-opt no-new-privileges:true \
-    --cap-add NET_BIND_SERVICE \
     -p 80:80 \
-    -p 443:443 \
-    -p 443:443/udp \
-    -v "$(pwd)/config:/config" \
-    -v "/var/log/haproxy:/var/log/haproxy" \
-    -e HAPROXY_THREADS=4 \
-    -e HAPROXY_BIND_IP=0.0.0.0 \
-    -e CONFIG_AUTO_GENERATE=false \
-    -e MIXED_SSL_MODE=true \
-    -e HA_DEBUG=false \
-    -e H3_29_SUPPORT=true \
-    -e QUIC_MAX_AGE=86400 \
-    -e ACME_EMAIL=your-email@example.com \
-    brycelarge/haproxy:latest
+    -p 443:443/tcp \
+    -p 8443:8443/udp \
+    --network=host \
+    -v $DIR/data:/config \
+    -v $DIR/data/logs:/var/log/haproxy \
+    -v $DIR/data/deployed-certs:/etc/haproxy/certs \
+    -e "MIXED_SSL_MODE=true" \
+    -e "HA_DEBUG=false" \
+    -e "HAPROXY_THREADS=16" \
+    -e "CONFIG_AUTO_GENERATE=true" \
+    -e "ACME_CHALLENGE_TYPE=http" \
+    -e "ACME_EMAIL=your-email@example.com" \
+    docker.io/brycelarge/haproxy:latest
 
 # Show container logs
 echo "Container started. Showing logs..."
-docker logs -f haproxy
+docker logs -f $NAME

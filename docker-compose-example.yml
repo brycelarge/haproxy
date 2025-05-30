@@ -1,57 +1,30 @@
-name: haproxy
-
+version: '3.8'
 services:
   haproxy:
-    image: brycelarge/haproxy:3.0.0
-    build:
-      context: .
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-    platform: linux/amd64
+    image: docker.io/brycelarge/haproxy:latest
     container_name: haproxy
+    restart: unless-stopped
+    network_mode: host  # Optional: Use host networking if needed
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "8443:8443/udp"
     volumes:
-      - ./config:/config
-      - /var/log/haproxy:/var/log/haproxy
+      - ./data:/config
+      - ./data/logs:/var/log/haproxy
+      - ./data/deployed-certs:/etc/haproxy/certs
     environment:
-      # Core Settings
-      - HAPROXY_THREADS=4
-      - HAPROXY_BIND_IP=0.0.0.0
-      - CONFIG_AUTO_GENERATE=false
       - MIXED_SSL_MODE=true
       - HA_DEBUG=false
-
-      # QUIC/HTTP3 Settings
-      - H3_29_SUPPORT=true
-      - QUIC_MAX_AGE=86400
-
-      # ACME/SSL Settings
+      - HAPROXY_THREADS=16
+      - CONFIG_AUTO_GENERATE=true
+      - ACME_CHALLENGE_TYPE=http
       - ACME_EMAIL=your-email@example.com
-
-    ports:
-      # HTTP
-      - "80:80"
-      # HTTPS
-      - "443:443"
-      # QUIC/UDP
-      - "8443:443/udp"
-      # Stats
-      - "8404:8404"
-    
     healthcheck:
       test: ["CMD", "/scripts/healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-    
-    restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    networks:
-      - proxy
-
-networks:
-  proxy:
-    name: proxy
-    driver: bridge
