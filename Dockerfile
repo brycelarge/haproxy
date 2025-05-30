@@ -22,14 +22,14 @@ FROM alpine:3.21 AS haproxy-builder
 COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
-ARG HAPROXY_BRANCH=3.1 \
-ARG HAPROXY_MINOR=3.1.0 \
-ARG HAPROXY_SHA256=34fed7b6243d49642799cb0a29748565208a6b2cfc8c4a9ffaeb97d59813e455 \
+ARG HAPROXY_BRANCH=3.2 \
+ARG HAPROXY_MINOR=3.2.0 \
+ARG HAPROXY_SHA256=7cbc8ac09e8059d90d4cbe3ccb32fec1ab19c39b372bf21e186c44346d1c854f \
 
 # Set ENV variables from ARGs for use in RUN commands
-ENV HAPROXY_BRANCH=3.1 \
-    HAPROXY_MINOR=3.1.0 \
-    HAPROXY_SHA256=34fed7b6243d49642799cb0a29748565208a6b2cfc8c4a9ffaeb97d59813e455 \
+ENV HAPROXY_BRANCH=3.2 \
+    HAPROXY_MINOR=3.2.0 \
+    HAPROXY_SHA256=7cbc8ac09e8059d90d4cbe3ccb32fec1ab19c39b372bf21e186c44346d1c854f \
     HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
