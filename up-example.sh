@@ -17,8 +17,7 @@ docker run -d \
     --restart unless-stopped \
     --security-opt no-new-privileges:true \
     -p 80:80 \
-    -p 443:443/tcp \
-    -p 8443:8443/udp \
+    -p 443:443 \
     --network=host \
     -v $DIR/data:/config \
     -v $DIR/data/logs:/var/log/haproxy \

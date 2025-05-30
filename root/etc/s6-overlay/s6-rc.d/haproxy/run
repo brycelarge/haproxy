@@ -29,6 +29,9 @@ for sock in frontend-offloading.sock frontend-offloading-ip-protection.sock; do
     fi
 done
 
+# Set up port forwarding for HTTP/3 if MIXED_SSL_MODE is enabled
+/scripts/setup_port_forwarding.sh
+
 # Start HAProxy if it's not already running
 if ! pgrep -x "haproxy" > /dev/null; then
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then

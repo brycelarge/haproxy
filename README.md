@@ -74,8 +74,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 docker run -d \
   --name haproxy \
   -p 80:80 \
-  -p 443:443/tcp \
-  -p 8443:8443/udp \
+  -p 443:443 \
   --network=host \
   -v /path/to/data:/config \
   -v /path/to/data/logs:/var/log/haproxy \
@@ -101,8 +100,7 @@ services:
     network_mode: host  # Optional: Use host networking if needed
     ports:
       - "80:80"
-      - "443:443/tcp"
-      - "8443:8443/udp"
+      - "443:443"
     volumes:
       - ./data:/config
       - ./data/logs:/var/log/haproxy
@@ -412,7 +410,7 @@ You can use either the newer API Token method or the legacy API Key method:
 |------|----------|-------------|
 | 80 | TCP | HTTP traffic and ACME challenges |
 | 443 | TCP | HTTPS traffic |
-| 443/8443 | UDP | QUIC protocol (HTTP/3) - Port 8443 is used when MIXED_SSL_MODE=true |
+| 443 | UDP | QUIC protocol (HTTP/3) |
 
 ## Security Configuration
 
@@ -645,51 +643,27 @@ The container needs:
 - A valid email address set via `ACME_EMAIL` environment variable
 - The domains to be properly pointed to your server
 
-### Firewall Port Forwarding (MIXED_SSL_MODE)
+### MIXED_SSL_MODE and HTTP/3 Support
 
-When running in MIXED_SSL_MODE, HAProxy uses a split configuration to handle both traditional HTTPS and QUIC traffic. This is necessary because:
+When running in MIXED_SSL_MODE, HAProxy uses a split configuration to handle both traditional HTTPS and QUIC/HTTP3 traffic. This is necessary because:
 
 1. The main HTTPS frontend (`frontend https`) operates in TCP mode to handle SSL passthrough, which is required for certain features and optimizations
 2. QUIC/HTTP3 requires a separate frontend in HTTP mode with SSL termination
 3. Both protocols need to be accessible on the standard HTTPS port (443) from the client's perspective
 
-Due to this architecture:
-- The TCP frontend binds directly to port 443 for SSL passthrough
-- The QUIC frontend must bind to a different port (8443) to avoid conflict
-- External clients must still connect to port 443 for both protocols
+Our container automatically handles all the necessary internal port forwarding to make this work seamlessly. You only need to:
 
-To achieve this, your firewall needs to direct traffic differently based on protocol while maintaining the appearance of a single port externally. Here's how to set it up:
+1. Enable MIXED_SSL_MODE by setting the environment variable:
+   ```
+   -e "MIXED_SSL_MODE=true"
+   ```
 
-#### pfSense Configuration
+2. Expose port 443 for both TCP and UDP traffic:
+   ```
+   -p 443:443
+   ```
 
-1. Navigate to `Firewall > NAT > Port Forward`
-2. Add two rules:
-
-**Rule 1 - TCP Traffic:**
-- Protocol: TCP
-- Source: any
-- Destination Port Range: 443
-- Redirect Target IP: [Your HAProxy Host IP]
-- Redirect Target Port: 443
-- Description: HAProxy HTTPS
-
-**Rule 2 - UDP/QUIC Traffic:**
-- Protocol: UDP
-- Source: any
-- Destination Port Range: 443
-- Redirect Target IP: [Your HAProxy Host IP]
-- Redirect Target Port: 8443
-- Description: HAProxy QUIC
-
-#### Other Firewalls
-
-For other firewalls/routers, you need to configure:
-1. Forward TCP port 443 → [HAProxy Host]:443
-2. Forward UDP port 443 → [HAProxy Host]:8443
-
-This setup ensures that:
-- Regular HTTPS traffic (TCP/443) goes directly to HAProxy on port 443
-- QUIC/HTTP3 traffic (UDP/443) is redirected to HAProxy's QUIC port 8443
+No additional firewall configuration is required. The container will automatically set up the necessary internal routing to ensure that both HTTPS and HTTP/3 traffic work correctly on port 443.
 
 ### Custom Certificates
 

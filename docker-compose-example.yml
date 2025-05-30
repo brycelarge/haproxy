@@ -7,8 +7,7 @@ services:
     network_mode: host  # Optional: Use host networking if needed
     ports:
       - "80:80"
-      - "443:443/tcp"
-      - "8443:8443/udp"
+      - "443:443"
     volumes:
       - ./data:/config
       - ./data/logs:/var/log/haproxy
