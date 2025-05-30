@@ -1,0 +1,179 @@
+global:
+  - maxconn 10000
+  - tune.bufsize 32768
+  - tune.maxrewrite 8192
+  - tune.ssl.cachesize 100000
+  - tune.ssl.lifetime 300
+
+defaults:
+  - option http-keep-alive
+  - timeout client 30s
+  - timeout connect 5s
+  - timeout server 240s
+  - timeout tunnel 43200s # 12 hour timeout for websocket
+
+frontend:
+  http:
+    - default_backend web-default
+  https:
+    - default_backend ssl-passthrough
+  https-offloading-ip-protection:
+    - default_backend protected-service
+    - acl network_allowed_src src 192.168.1.100
+    - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
+    - http-request deny unless network_allowed_src or network_allowed_xff
+  https-offloading:
+    - http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+
+https_frontend_rules:
+  - backend: frontend-offloading
+    domains:
+      - .example.com
+      - .company.org
+      - .internal.local
+  - backend: frontend-offloading-ip-protection
+    domains:
+      - restricted.example.com
+      - admin.company.org
+      - internal.company.org
+
+domain_mappings:
+  - domain: restricted.example.com
+    frontend: https-offloading-ip-protection
+    backend: protected-service
+
+  - domain: admin.company.org
+    frontend: https-offloading-ip-protection
+    backend: admin-panel
+
+  - domain: internal.company.org
+    frontend: https-offloading-ip-protection
+    backend: internal-app
+
+  - domain: www.example.com
+    frontend: https-offloading
+    backend: web-service
+
+  - domain: api.example.com
+    frontend: https-offloading
+    backend: api-service
+
+  - domain: app.company.org
+    frontend: https-offloading
+    backend: app-service
+
+  - domain: dashboard.company.org
+    frontend: https-offloading
+    backend: dashboard
+
+backends:
+  # Default backends for SSL passthrough
+  - name: web-default
+    mode: http
+    cache: false
+    hosts:
+      - host: "192.168.1.10:80"
+        check:
+          disabled: true
+
+  - name: ssl-passthrough
+    mode: tcp
+    cache: false
+    hosts:
+      - host: "192.168.1.10:443"
+        check:
+          disabled: true
+    use_send_proxy: true
+    ssl: false
+    ssl_verify: false
+
+  # IP-restricted backends
+  - name: protected-service
+    mode: http
+    cache: true
+    hosts:
+      - host: "192.168.1.20:8080"
+        check:
+          type: http
+          uri: "/health"
+          interval: 2000
+          fall: 3
+          rise: 2
+
+  - name: admin-panel
+    mode: http
+    cache: false
+    hosts:
+      - host: "192.168.1.20:8081"
+        check:
+          type: http
+          uri: "/status"
+          interval: 5000
+          fall: 3
+          rise: 2
+
+  - name: internal-app
+    mode: http
+    hosts:
+      - host: "192.168.1.20:8082"
+        check:
+          type: tcp
+          interval: 3000
+          fall: 2
+          rise: 2
+
+  # Regular backends
+  - name: web-service
+    mode: http
+    enable_h2: true
+    hosts:
+      - "192.168.1.30:80"
+
+  - name: api-service
+    mode: http
+    enable_h2: true
+    options:
+      - "httpchk GET /health"
+      - "allbackups"  # Use all backup servers simultaneously when active
+    http_check:
+      - "expect status 200"
+    extra_config:
+      - "http-request set-header Host api.example.com"
+    hosts:
+      - host: "192.168.1.30:8090"  # Primary server
+        check:
+          type: tcp
+          interval: 1000
+          fall: 2
+          rise: 1
+          slowstart: "10s"
+      - "192.168.1.30:80 backup"  # Simple backup syntax
+      - host: "192.168.1.30:8091"  # Object syntax with backup
+        backup: true
+      - host: "192.168.1.30:8092"  # Backup with weight
+        backup: true
+        weight: 20  # Higher weight gets more traffic when active
+
+  # Mixed HTTP/2 configuration example
+  - name: app-service
+    mode: http
+    enable_h2: false  # HTTP/2 disabled by default
+    hosts:
+      - host: "192.168.1.40:8080"  # No HTTP/2
+        check:
+          type: http
+          uri: "/health"
+      - host: "192.168.1.40:8081"
+        enable_h2: true  # HTTP/2 enabled just for this host
+        check:
+          type: http
+          uri: "/health"
+      - "192.168.1.40:8082"  # No HTTP/2 (inherits from backend)
+
+  # SSL backend example
+  - name: dashboard
+    mode: http
+    hosts:
+      - "192.168.1.50:8443"
+    ssl: true
+    ssl_verify: false
