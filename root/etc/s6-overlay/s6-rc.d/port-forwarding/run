@@ -2,34 +2,34 @@
 # shellcheck shell=bash
 
 # This script sets up port forwarding for HTTP/3 when MIXED_SSL_MODE is enabled
-# It forwards UDP traffic from port 443 to port 8443 inside the container
-# This must run as root, which is why it's a separate S6 service
+# It forwards UDP traffic from port 443 to port 8443 inside the container using socat
+# This runs as a oneshot service during container startup
 
 if [ "${MIXED_SSL_MODE}" = "true" ]; then
     echo "[port-forwarding] MIXED_SSL_MODE is enabled, setting up UDP port forwarding from 443 to 8443..." | ts '%Y-%m-%d %H:%M:%S'
 
-    # Check if iptables is available
-    if ! command -v iptables &> /dev/null; then
-        echo "[port-forwarding] Warning: iptables is not installed. HTTP/3 may not work correctly with MIXED_SSL_MODE." | ts '%Y-%m-%d %H:%M:%S'
-        echo "[port-forwarding] Continuing without port forwarding..." | ts '%Y-%m-%d %H:%M:%S'
+    # Check if socat is available
+    if ! command -v socat &> /dev/null; then
+        echo "[port-forwarding] Error: socat is not installed. Cannot set up port forwarding." | ts '%Y-%m-%d %H:%M:%S'
         exit 0
     fi
 
-    # Check if the rule already exists to avoid duplicates
-    if ! iptables -t nat -C PREROUTING -p udp --dport 443 -j REDIRECT --to-port 8443 2>/dev/null; then
-        # Add the port forwarding rule
-        if iptables -t nat -A PREROUTING -p udp --dport 443 -j REDIRECT --to-port 8443; then
-            echo "[port-forwarding] Successfully set up UDP port forwarding from 443 to 8443" | ts '%Y-%m-%d %H:%M:%S'
-        else
-            echo "[port-forwarding] Failed to set up port forwarding. HTTP/3 may not work correctly." | ts '%Y-%m-%d %H:%M:%S'
-        fi
-    else
-        echo "[port-forwarding] Port forwarding rule already exists" | ts '%Y-%m-%d %H:%M:%S'
-    fi
+    # Kill any existing socat processes for this port
+    pkill -f "socat UDP-LISTEN:443" 2>/dev/null
 
-    # List current rules for verification
-    echo "[port-forwarding] Current NAT rules:" | ts '%Y-%m-%d %H:%M:%S'
-    iptables -t nat -L -n -v | grep -i redirect | ts '%Y-%m-%d %H:%M:%S'
+    # Start socat in the background to forward UDP traffic
+    socat UDP-LISTEN:443,fork UDP:127.0.0.1:8443 &
+    SOCAT_PID=$!
+
+    # Check if socat started successfully
+    if [ -n "$SOCAT_PID" ] && kill -0 $SOCAT_PID 2>/dev/null; then
+        echo "[port-forwarding] Successfully started socat UDP port forwarding from 443 to 8443 (PID: $SOCAT_PID)" | ts '%Y-%m-%d %H:%M:%S'
+        
+        # Save the PID to a file so we can stop it later if needed
+        echo $SOCAT_PID > /var/run/socat-port-forward.pid
+    else
+        echo "[port-forwarding] Failed to start socat. HTTP/3 may not work correctly." | ts '%Y-%m-%d %H:%M:%S'
+    fi
 else
     echo "[port-forwarding] MIXED_SSL_MODE is disabled, no port forwarding needed" | ts '%Y-%m-%d %H:%M:%S'
 fi
