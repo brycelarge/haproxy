@@ -24,12 +24,12 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 # haproxy build environment variables
 ARG HAPROXY_BRANCH=3.2 \
 ARG HAPROXY_MINOR=3.2.0 \
-ARG HAPROXY_SHA256=7cbc8ac09e8059d90d4cbe3ccb32fec1ab19c39b372bf21e186c44346d1c854f \
+ARG HAPROXY_SHA256=651e22b836cb846fa22e3e87781629af5968b4e0737d520bbd000d4391168e3a \
 
 # Set ENV variables from ARGs for use in RUN commands
 ENV HAPROXY_BRANCH=3.2 \
     HAPROXY_MINOR=3.2.0 \
-    HAPROXY_SHA256=7cbc8ac09e8059d90d4cbe3ccb32fec1ab19c39b372bf21e186c44346d1c854f \
+    HAPROXY_SHA256=651e22b836cb846fa22e3e87781629af5968b4e0737d520bbd000d4391168e3a \
     HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags \
     HAPROXY_MAKE_OPTS=' \
     TARGET=linux-musl \
@@ -174,7 +174,8 @@ RUN \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV CONFIG_DIR=/config \
-    CONFIG_AUTO_GENERATE=false \
+    CONFIG_AUTO_GENERATE=true \
+    FRONTEND_IP_PROTECTION=false \
     DEV_MODE=false \
     DEBUG=false
 
