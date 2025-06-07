@@ -316,16 +316,15 @@ frontend https-offloading-ip-protection
 EOF
 fi
 
-PRIMARY_BIND=""
+PRIMARY_BIND="unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2"
 if [ $MIXED_SSL_MODE != "true" ]; then
-    PRIMARY_BIND="${HAPROXY_BIND_IP}:8443 alpn h3"
+    PRIMARY_BIND="${HAPROXY_BIND_IP}:8443 ssl crt /etc/haproxy/certs/ strict-sni alpn h3"
 fi
 
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
-    bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS}
-    $PRIMARY_BIND
+    bind            ${PRIMARY_BIND}
+    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3
     mode            http
     log             global
     option          http-keep-alive
@@ -385,7 +384,8 @@ backend frontend-offloading
 EOF
 fi
 
-cat <<EOF >> "$HAPROXY_CFG"
+if [ "FRONTEND_IP_PROTECTION" = "true" ]; then
+    cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading-ip-protection
     mode tcp
     id 11
@@ -394,6 +394,7 @@ backend frontend-offloading-ip-protection
     server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn
 
 EOF
+fi
 
 # Convert YAML to JSON and check for errors
 if ! JSON_CONFIG=$(yq eval -o=json "$YAML_FILE"); then
@@ -524,7 +525,7 @@ generate_https_offloading_frontend_config() {
             backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | select(.domains != null) | .domains[] + " " + .backend')
 
     # Combine configs with proper line breaks
     local config="${acl_config}
