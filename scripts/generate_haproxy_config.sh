@@ -436,7 +436,7 @@ else
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
 fi
 
 # Function to generate HTTPS frontend configuration
@@ -449,13 +449,13 @@ generate_https_frontend_config() {
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
 
     # Generate individual ACLs for frontend-offloading
     while read -r domain; do
         config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
 
     # Add use_backend rules
     config="${config}
