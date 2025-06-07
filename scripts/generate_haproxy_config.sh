@@ -267,7 +267,7 @@ frontend https
 EOF
 fi
 
-if [ "FRONTEND_IP_PROTECTION" = "true" ]; then
+if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
     bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
@@ -384,7 +384,7 @@ backend frontend-offloading
 EOF
 fi
 
-if [ "FRONTEND_IP_PROTECTION" = "true" ]; then
+if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading-ip-protection
     mode tcp
