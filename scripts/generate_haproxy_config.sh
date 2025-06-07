@@ -267,7 +267,8 @@ frontend https
 EOF
 fi
 
-cat <<EOF >> "$HAPROXY_CFG"
+if [ "FRONTEND_IP_PROTECTION" = "true" ]; then
+    cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
     bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
     mode            http
@@ -313,11 +314,18 @@ frontend https-offloading-ip-protection
     # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
 
 EOF
+fi
+
+PRIMARY_BIND=""
+if [ $MIXED_SSL_MODE != "true" ]; then
+    PRIMARY_BIND="${HAPROXY_BIND_IP}:8443 alpn h3"
+fi
 
 cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
     bind            unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
     bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3 thread 1-${HAPROXY_THREADS}
+    $PRIMARY_BIND
     mode            http
     log             global
     option          http-keep-alive
