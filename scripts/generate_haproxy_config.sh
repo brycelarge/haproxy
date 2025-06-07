@@ -525,7 +525,7 @@ generate_https_offloading_frontend_config() {
             backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | select(.domains != null) | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading" and .frontend != "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend')
 
     # Combine configs with proper line breaks
     local config="${acl_config}
@@ -555,7 +555,7 @@ generate_https_offloading_ip_protection_frontend_config() {
             base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
             break
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend')
 
     if [ -z "$base_domain" ]; then
         debug_log "Error: Could not determine base domain for IP protection frontend"
@@ -589,7 +589,7 @@ generate_https_offloading_ip_protection_frontend_config() {
             backend_config="${backend_config}    use_backend ${backend} if ${domain} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend')
 
     # Combine configs with proper line breaks
     local config="${acl_config}
