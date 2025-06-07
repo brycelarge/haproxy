@@ -301,9 +301,8 @@ renew_cert() {
     deploy_cert "${domain}" "${hot_update}";
 }
 
-# Function to extract domains from the YAML file
 extract_domains() {
-    yq e '.domain_mappings[].domain' "$HAPROXY_YAML" | sort | uniq
+    yq e '.domain_mappings[].domains[]' "$HAPROXY_YAML" | grep -v '^null$' | sort | uniq
 }
 
 function check_for_missing_domain_certs() {

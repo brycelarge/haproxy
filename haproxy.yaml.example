@@ -38,31 +38,32 @@ https_frontend_rules:
       - internal.company.org
 
 domain_mappings:
-  - domain: restricted.example.com
+  # Example 1: Single domain in array format
+  - domains:
+    - restricted.example.com
     frontend: https-offloading-ip-protection
     backend: protected-service
 
-  - domain: admin.company.org
+  # Example 2: Multiple domains for the same backend
+  - domains:
+    - admin.company.org
+    - internal.company.org
+    - secure.company.org
     frontend: https-offloading-ip-protection
     backend: admin-panel
 
-  - domain: internal.company.org
-    frontend: https-offloading-ip-protection
-    backend: internal-app
-
-  - domain: www.example.com
+  # Example 3: Multiple subdomains for the same service
+  - domains:
+    - api.example.com
+    - www.example.com
+    - app.example.com
     frontend: https-offloading
     backend: web-service
 
-  - domain: api.example.com
-    frontend: https-offloading
-    backend: api-service
-
-  - domain: app.company.org
-    frontend: https-offloading
-    backend: app-service
-
-  - domain: dashboard.company.org
+  # Example 4: App and dashboard on the same backend
+  - domains:
+    - app.company.org
+    - dashboard.company.org
     frontend: https-offloading
     backend: dashboard
 
