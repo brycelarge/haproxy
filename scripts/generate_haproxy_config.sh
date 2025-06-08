@@ -427,11 +427,14 @@ replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
 replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection[]' '    '
+
+if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
+    replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection[]' '    '
+fi
 
 if [ "$MIXED_SSL_MODE" = "true" ]; then
     replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[]' '    '
-else
+elif [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     # Generate individual ACLs for frontend-offloading-ip-protection
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
@@ -807,10 +810,14 @@ EOF
     done
 }
 
+generate_https_offloading_frontend_config;
+
+if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
+    generate_https_offloading_ip_protection_frontend_config;
+fi
+
 if [ "$MIXED_SSL_MODE" = "true" ]; then
     generate_https_frontend_config;
-    generate_https_offloading_frontend_config;
-    generate_https_offloading_ip_protection_frontend_config;
 fi
 
 generate_backend_configs;
