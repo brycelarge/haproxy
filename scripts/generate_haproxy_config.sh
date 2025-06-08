@@ -32,6 +32,17 @@ if [ -f "$LOCK_FILE" ]; then
     fi
 fi
 
+# Function to clean up lock file
+cleanup() {
+    # Check if lock file exists and contains our PID before removing
+    if [ -f "$LOCK_FILE" ] && [ "$(cat "$LOCK_FILE" 2>/dev/null)" = "$$" ]; then
+        rm -f "$LOCK_FILE"
+    fi
+}
+
+# Set trap to ensure cleanup on exit
+trap cleanup EXIT INT TERM
+
 # Create lock file with current PID
 echo $$ > "$LOCK_FILE"
 
