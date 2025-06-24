@@ -436,11 +436,12 @@ EOF
 # Replace placeholders with YAML data
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
-replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading[]' '    '
+replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http.config[]' '    '
+replace_placeholder "# \[HTTPS-FRONTEND PLACEHOLDER\]" '.frontend.https.config[]' '    '
+replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
 
 if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
-    replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection[]' '    '
+    replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
 fi
 
 if [ "$MIXED_SSL_MODE" = "true" ]; then
@@ -459,17 +460,17 @@ generate_https_frontend_config() {
 
     debug_log "Generating ACLs and use_backend rules for HTTPS frontend"
 
-    # Generate individual ACLs for frontend-offloading-ip-protection
+    # Generate individual ACLs for frontend-offloading-ip-protection from the https-offloading-ip-protection frontend
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend["https-offloading-ip-protection"].domains[] | select(.backend == "frontend-offloading-ip-protection") | .patterns[]')
 
-    # Generate individual ACLs for frontend-offloading
+    # Generate individual ACLs for frontend-offloading from the https frontend
     while read -r domain; do
         config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading" and .backend != "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend.https.domains[] | select(.backend == "frontend-offloading") | .patterns[]')
 
     # Add use_backend rules
     config="${config}
@@ -569,7 +570,7 @@ generate_https_offloading_ip_protection_frontend_config() {
             base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
             break
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend["https-offloading-ip-protection"].domains[] | select(.patterns != null and (.patterns | length > 0)) | .patterns[] + " " + .backend')
 
     if [ -z "$base_domain" ]; then
         debug_log "Error: Could not determine base domain for IP protection frontend"
@@ -603,7 +604,7 @@ generate_https_offloading_ip_protection_frontend_config() {
             backend_config="${backend_config}    use_backend ${backend} if ${domain} ${cert_acl_name}
 "
         fi
-    done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend')
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend["https-offloading-ip-protection"].domains[] | select(.patterns != null and (.patterns | length > 0)) | .patterns[] + " " + .backend')
 
     # Combine configs with proper line breaks
     local config="${acl_config}

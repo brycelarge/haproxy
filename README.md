@@ -131,38 +131,36 @@ defaults:
 # Frontend Configurations
 frontend:
   http:
-    - bind *:80 user haproxy group haproxy
-    - default_backend web-backend
+    config:
+      - bind *:80 user haproxy group haproxy
+      - default_backend web-backend
 
   https:
-    - bind *:443 user haproxy group haproxy
-    - default_backend secure-backend
+    config:
+      - bind *:443 user haproxy group haproxy
+      - default_backend secure-backend
+    domains:
+      - backend: frontend-offloading
+        patterns:
+          - .example.com
+          - .company.com
 
   # IP-restricted frontend example
   https-offloading-ip-protection:
-    - default_backend restricted-backend
-    - acl network_allowed src 192.168.1.0/24
-    - acl from_allowed_ip req.hdr(X-Forwarded-For) -m ip 192.168.1.0/24
-    - http-request deny unless from_allowed_ip or network_allowed
+    config:
+      - default_backend restricted-backend
+      - acl network_allowed src 192.168.1.0/24
+      - acl from_allowed_ip req.hdr(X-Forwarded-For) -m ip 192.168.1.0/24
+      - http-request deny unless from_allowed_ip or network_allowed
+    domains:
+      - backend: frontend-offloading-ip-protection
+        patterns:
+          - restricted.example.com
+          - admin.example.com
 
   https-offloading:
-    - default_backend web-backend
-
-# Domain Rules
-https_frontend_rules:
-  # Standard domains
-  - backend: frontend-offloading
-    match_type: ssl_fc_sni_end
-    domains:
-      - .example.com
-      - .company.com
-
-  # IP-protected domains
-  - backend: frontend-offloading-ip-protection
-    match_type: ssl_fc_sni
-    domains:
-      - restricted.example.com
-      - admin.example.com
+    config:
+      - default_backend web-backend
 
 # Domain to Backend Mappings
 The `domain_mappings` array serves two crucial purposes:
@@ -176,12 +174,14 @@ When the container starts, it reads this array to:
 
 domain_mappings:
   # IP-protected service
-  - domain: restricted.example.com
+  - domains:
+    - restricted.example.com
     frontend: https-offloading-ip-protection
     backend: restricted-service
 
   # Standard web service
-  - domain: www.example.com
+  - domains:
+    - www.example.com
     frontend: https-offloading
     backend: web-service
 

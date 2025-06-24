@@ -14,28 +14,32 @@ defaults:
 
 frontend:
   http:
-    - default_backend web-default
+    config:
+      - default_backend web-default
   https:
-    - default_backend ssl-passthrough
+    config:
+      - default_backend ssl-passthrough
+    domains:
+      - backend: frontend-offloading
+        patterns:
+          - .example.com
+          - .company.org
+          - .internal.local
   https-offloading-ip-protection:
-    - default_backend protected-service
-    - acl network_allowed_src src 192.168.1.100
-    - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
-    - http-request deny unless network_allowed_src or network_allowed_xff
+    config:
+      - default_backend protected-service
+      - acl network_allowed_src src 192.168.1.100
+      - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
+      - http-request deny unless network_allowed_src or network_allowed_xff
+    domains:
+      - backend: frontend-offloading-ip-protection
+        patterns:
+          - restricted.example.com
+          - admin.company.org
+          - internal.company.org
   https-offloading:
-    - http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
-
-https_frontend_rules:
-  - backend: frontend-offloading
-    domains:
-      - .example.com
-      - .company.org
-      - .internal.local
-  - backend: frontend-offloading-ip-protection
-    domains:
-      - restricted.example.com
-      - admin.company.org
-      - internal.company.org
+    config:
+      - http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
 
 domain_mappings:
   # Example 1: Single domain in array format
