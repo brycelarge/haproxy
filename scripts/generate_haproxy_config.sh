@@ -437,7 +437,6 @@ EOF
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
 replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http.config[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND PLACEHOLDER\]" '.frontend.https.config[]' '    '
 replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
 
 if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
