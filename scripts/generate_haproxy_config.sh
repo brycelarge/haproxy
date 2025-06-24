@@ -437,14 +437,14 @@ EOF
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
 replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http.config[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
+replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading.config[]' '    '
 
 if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
 fi
 
 if [ "$MIXED_SSL_MODE" = "true" ]; then
-    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[].config[]' '    '
+    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https.config[]' '    '
 elif [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     # Generate individual ACLs for frontend-offloading-ip-protection
     while read -r domain; do
