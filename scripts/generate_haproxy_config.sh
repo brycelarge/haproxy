@@ -329,7 +329,7 @@ fi
 
 PRIMARY_BIND="unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy"
 if [ $MIXED_SSL_MODE != "true" ]; then
-    PRIMARY_BIND="${HAPROXY_BIND_IP}:8443"
+    PRIMARY_BIND="${HAPROXY_BIND_IP}:443"
 fi
 
 cat <<EOF >> "$HAPROXY_CFG"
