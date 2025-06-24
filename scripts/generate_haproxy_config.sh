@@ -445,7 +445,7 @@ if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
 fi
 
 if [ "$MIXED_SSL_MODE" = "true" ]; then
-    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[]' '    '
+    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https[].config[]' '    '
 elif [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     # Generate individual ACLs for frontend-offloading-ip-protection
     while read -r domain; do
