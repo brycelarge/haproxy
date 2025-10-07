@@ -552,7 +552,7 @@ This image uses s6-overlay to manage service dependencies and startup sequence:
    - Downloads DH parameters for TLS
    - Installs acme.sh if not present
    - Registers with Let's Encrypt if needed
-   - Configures cron jobs for renewals
+   - Configures S6 service for certificate renewals
 
 2. **haproxy-config**: Generates HAProxy configuration
    - Converts YAML to HAProxy config when `CONFIG_AUTO_GENERATE=true`
@@ -628,7 +628,7 @@ The container automatically manages SSL certificates using acme.sh and Let's Enc
    - If not, requests a new certificate from Let's Encrypt
    - If yes, checks if renewal is needed
 3. Certificates are stored in `/config/certs/`
-4. Automatic renewal is handled by a cron job
+4. Automatic renewal is handled by an S6 longrun service
 
 Example domain mapping that will get an SSL certificate:
 ```yaml

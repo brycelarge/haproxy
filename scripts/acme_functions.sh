@@ -124,8 +124,6 @@ register_acme() {
     THUMBPRINT=$(grep "ACCOUNT_THUMBPRINT" /tmp/acme_reg.log | cut -d"'" -f2)
     echo "[acme] account THUMBPRINT: ${THUMBPRINT}" | ts '%Y-%m-%d %H:%M:%S';
     echo "${THUMBPRINT}" >> /config/acme/ca/thumbprint;
-
-    setup_acme_renewal
 }
 
 issue_cert() {
@@ -416,92 +414,6 @@ function check_for_missing_domain_certs() {
         else
             echo "[acme] Error: reload-haproxy.sh script not found" | ts '%Y-%m-%d %H:%M:%S'
         fi
-    fi
-}
-
-verify_cron() {
-    debug_log "[acme] Verifying ACME cron job and installing if it does not exist" | ts '%Y-%m-%d %H:%M:%S'
-
-    # Check if cron job exists
-    if ! s6-setuidgid "$USER" crontab -l 2>/dev/null | grep -q "/usr/local/bin/renew-certs.sh"; then
-        setup_acme_renewal
-    fi
-
-    # Perform a test run of the command to verify it works
-    debug_log "[acme] Testing certificate renewal script..." | ts '%Y-%m-%d %H:%M:%S'
-    s6-setuidgid "${USER}" /usr/local/bin/renew-certs.sh --test-only > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        debug_log "[acme] Certificate renewal script test successful" | ts '%Y-%m-%d %H:%M:%S'
-    else
-        debug_log "[acme] Warning: Certificate renewal script test failed, please check logs" | ts '%Y-%m-%d %H:%M:%S'
-    fi
-
-    debug_log "[acme] Certificate renewal setup complete" | ts '%Y-%m-%d %H:%M:%S'
-}
-
-function setup_acme_renewal() {
-    echo "[acme] Setting up ACME certificate renewal job" | ts '%Y-%m-%d %H:%M:%S'
-
-    # Ensure log file exists and has correct permissions
-    touch "$LOG_FILE"
-    chown "${USER}:${USER}" "$LOG_FILE"
-    chmod 640 "$LOG_FILE"
-
-    # Create the renewal script
-    cat << 'EOF' > /usr/local/bin/renew-certs.sh
-#!/usr/bin/with-contenv bash
-# shellcheck shell=bash
-
-# Check for test mode
-TEST_ONLY=false
-if [[ "$1" == "--test-only" ]]; then
-    TEST_ONLY=true
-    echo "Running in test mode, no certificates will be checked"
-    exit 0
-fi
-
-# Source the acme functions
-source /scripts/acme_functions.sh
-
-# Log file path (already defined in acme_functions.sh)
-LOG_FILE="/var/log/acme-renewals.log"
-
-# Log start
-echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Starting certificate renewal process" | tee -a "$LOG_FILE"
-
-# Run the check for missing certs function with hot reload
-check_for_missing_domain_certs "no"
-
-# Log completion
-echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] - Certificate renewal process completed" | tee -a "$LOG_FILE"
-EOF
-
-    # Make the renewal script executable
-    chmod +x /usr/local/bin/renew-certs.sh
-    chown "${USER}:${USER}" /usr/local/bin/renew-certs.sh
-
-    # Create the cron.d directory if it doesn't exist
-    mkdir -p /etc/cron.d
-
-    # Create the cron file in /etc/cron.d with proper ownership
-    cat << EOF > /etc/cron.d/acme-renewal
-# Run certificate renewal at 2:30 AM on Monday and Thursday
-30 2 * * 1,4 root s6-setuidgid ${USER} /usr/local/bin/renew-certs.sh | tee -a ${LOG_FILE} 2>&1
-EOF
-
-    # Make sure cron file has correct permissions
-    chmod 0644 /etc/cron.d/acme-renewal
-
-    # First log to file directly
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" >> "${LOG_FILE}"
-
-    # Then output to console with timestamp in a more direct way
-    echo "[acme] Renewal cron job successfully scheduled: 2:30 AM on Monday and Thursday" | ts '%Y-%m-%d %H:%M:%S' || true
-
-    # Show the current cron configuration
-    if [ "${DEBUG}" == "true" ]; then
-        debug_log "Current cron configuration:"
-        cat /etc/cron.d/acme-renewal
     fi
 }
 

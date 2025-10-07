@@ -36,5 +36,8 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     sleep 5
 done
 
-# Process certificates
+echo "[acme] Running initial certificate check" | ts '%Y-%m-%d %H:%M:%S'
 check_for_missing_domain_certs "no"
+
+echo "[acme] Initial certificate check completed, switching to renewal service" | ts '%Y-%m-%d %H:%M:%S'
+exec /scripts/acme_renewal.sh
