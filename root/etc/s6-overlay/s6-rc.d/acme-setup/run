@@ -20,5 +20,3 @@ fi
 if [ ! -d /config/acme/ca ]; then
     register_acme;
 fi
-
-verify_cron;
