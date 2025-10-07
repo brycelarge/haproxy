@@ -20,17 +20,17 @@ else
     s6-setuidgid haproxy haproxy -v
 fi
 
-# Ensure the socket files exist and have the correct permissions
-for sock in frontend-offloading.sock frontend-offloading-ip-protection.sock; do
-    if [ ! -f "/var/lib/haproxy/$sock" ]; then
-        touch "/var/lib/haproxy/$sock"
-        chmod 660 "/var/lib/haproxy/$sock"
-        chown haproxy:haproxy "/var/lib/haproxy/$sock"
-    fi
-done
-
 # Start HAProxy if it's not already running
 if ! pgrep -x "haproxy" > /dev/null; then
+    # Ensure the socket files exist and have the correct permissions
+    for sock in frontend-offloading.sock frontend-offloading-ip-protection.sock; do
+        if [ ! -f "/var/lib/haproxy/$sock" ]; then
+            touch "/var/lib/haproxy/$sock"
+            chmod 660 "/var/lib/haproxy/$sock"
+            chown haproxy:haproxy "/var/lib/haproxy/$sock"
+        fi
+    done
+
     if [ "${HA_DEBUG_ENABLED}" == "true" ]; then
         s6-setuidgid haproxy haproxy -f -d /config/haproxy.cfg
     else
