@@ -350,7 +350,7 @@ function check_for_missing_domain_certs() {
                 if [ "$expiration_seconds" -lt "$thirty_days_from_now" ]; then
                     echo "[acme] $domain Certificate will expire soon, renewing..." | ts '%Y-%m-%d %H:%M:%S'
                     if renew_cert "$domain" "$hot_update"; then
-                        certs_updated=true
+                        certs_updated="true"
                     fi
                 fi
             else
@@ -372,24 +372,24 @@ function check_for_missing_domain_certs() {
                         if [ "$cert_expiration_seconds" -gt "$current_time" ]; then
                             echo "[acme] $domain certificate in acme directory is valid, deploying..." | ts '%Y-%m-%d %H:%M:%S'
                             if deploy_cert "$domain" "$hot_update"; then
-                                certs_updated=true
+                                certs_updated="true"
                             fi
                         else
                             echo "[acme] $domain certificate in acme directory is expired, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                             if issue_cert "$domain" "$hot_update"; then
-                                certs_updated=true
+                                certs_updated="true"
                             fi
                         fi
                     else
                         echo "[acme] $domain certificate file not found in expected location, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                         if issue_cert "$domain" "$hot_update"; then
-                            certs_updated=true
+                            certs_updated="true"
                         fi
                     fi
                 else
                     echo "[acme] $domain certificate does not exist, issuing new certificate..." | ts '%Y-%m-%d %H:%M:%S'
                     if issue_cert "$domain" "$hot_update"; then
-                        certs_updated=true
+                        certs_updated="true"
                     fi
                 fi
             fi
@@ -407,7 +407,7 @@ function check_for_missing_domain_certs() {
     fi
 
     # If hot_update is "no" but certificates were updated, reload HAProxy
-    if [ "$hot_update" = "no" ] && [ "$certs_updated" = true ]; then
+    if [ "$hot_update" = "no" ] && [ "$certs_updated" = "true" ]; then
         echo "[acme] Certificates were updated and hot_update is disabled, reloading HAProxy..." | ts '%Y-%m-%d %H:%M:%S'
         if [ -f "/scripts/reload-haproxy.sh" ]; then
             /scripts/reload-haproxy.sh
