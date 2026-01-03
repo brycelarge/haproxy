@@ -72,7 +72,7 @@ install_acme() {
     # Create environment file
     s6-setuidgid "${USER}" cat <<EOF > "${HOME_DIR}/acme.sh.env"
 # HAProxy deployment settings
-export DEPLOY_HAPROXY_HOT_UPDATE=yes
+export DEPLOY_HAPROXY_HOT_UPDATE=1
 export DEPLOY_HAPROXY_STATS_SOCKET=/var/lib/haproxy/admin.sock
 export DEPLOY_HAPROXY_PEM_PATH=/etc/haproxy/certs
 
