@@ -253,7 +253,16 @@ frontend http
 
 EOF
 
-if [ "$MIXED_SSL_MODE" = "true" ]; then
+# Check if certificate directory exists and has files
+HAS_CERTS=false
+if [ -d "/etc/haproxy/certs" ] && [ "$(ls -A /etc/haproxy/certs 2>/dev/null)" ]; then
+    HAS_CERTS=true
+    echo "[haproxy] Certificate directory contains files, enabling SSL frontends" | ts '%Y-%m-%d %H:%M:%S'
+else
+    echo "[haproxy] Certificate directory is empty, skipping SSL frontends" | ts '%Y-%m-%d %H:%M:%S'
+fi
+
+if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 frontend https
     bind        ${HAPROXY_BIND_IP}:443
@@ -278,7 +287,7 @@ frontend https
 EOF
 fi
 
-if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
+if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading-ip-protection
     bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
@@ -332,7 +341,9 @@ if [ $MIXED_SSL_MODE != "true" ]; then
     PRIMARY_BIND="${HAPROXY_BIND_IP}:443"
 fi
 
-cat <<EOF >> "$HAPROXY_CFG"
+# Only generate HTTPS offloading frontend if certificates exist
+if [ "$HAS_CERTS" = "true" ]; then
+    cat <<EOF >> "$HAPROXY_CFG"
 frontend https-offloading
     bind            ${PRIMARY_BIND} ssl crt /etc/haproxy/certs/ strict-sni alpn h2
     bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3
@@ -382,8 +393,9 @@ frontend https-offloading
     # [HTTPS-FRONTEND-OFFLOADING PLACEHOLDER]
 
 EOF
+fi
 
-if [ "$MIXED_SSL_MODE" = "true" ]; then
+if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading
     mode tcp
@@ -395,7 +407,7 @@ backend frontend-offloading
 EOF
 fi
 
-if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
+if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat <<EOF >> "$HAPROXY_CFG"
 backend frontend-offloading-ip-protection
     mode tcp

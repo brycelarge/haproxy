@@ -16,12 +16,12 @@ while [ ! -f "$ACME_THUMBPRINT" ]; do
     sleep 3
 done
 
-# # Wait for HAProxy to be fully started by checking for its PID file and socket
-# debug_log "[acme] waiting for HAProxy to be fully started..." | ts '%Y-%m-%d %H:%M:%S'
-# while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
-#     debug_log "[acme] waiting for HAProxy to be fully started (PID file: $([ -f "$HAPROXY_PID_FILE" ] && echo "exists" || echo "missing"), Socket: $([ -S "$HAPROXY_SOCKET" ] && echo "exists" || echo "missing"))..." | ts '%Y-%m-%d %H:%M:%S'
-#     sleep 5
-# done
+# Wait for HAProxy to be fully started by checking for its PID file and socket
+debug_log "[acme] waiting for HAProxy to be fully started..." | ts '%Y-%m-%d %H:%M:%S'
+while [ ! -f "$HAPROXY_PID_FILE" ] || [ ! -S "$HAPROXY_SOCKET" ]; do
+    debug_log "[acme] waiting for HAProxy to be fully started (PID file: $([ -f "$HAPROXY_PID_FILE" ] && echo "exists" || echo "missing"), Socket: $([ -S "$HAPROXY_SOCKET" ] && echo "exists" || echo "missing"))..." | ts '%Y-%m-%d %H:%M:%S'
+    sleep 5
+done
 
 # Additional check to ensure HAProxy is responding
 MAX_ATTEMPTS=12
