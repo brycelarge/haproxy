@@ -47,7 +47,7 @@ fi
 
 # Validate the configuration first
 debug_log "Validating configuration..."
-if ! haproxy -c -f /config/haproxy.cfg; then
+if ! s6-setuidgid haproxy haproxy -c -f /config/haproxy.cfg; then
     echo "[Haproxy] Error: Configuration validation failed" | ts '%Y-%m-%d %H:%M:%S'
     exit 1
 fi
@@ -99,7 +99,7 @@ retry_count=0
 reload_success=false
 
 while [ $retry_count -lt $MAX_RETRIES ] && [ "$reload_success" = "false" ]; do
-    if haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
+    if s6-setuidgid haproxy haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
         reload_success=true
     else
         retry_count=$((retry_count + 1))
