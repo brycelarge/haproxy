@@ -51,12 +51,12 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 # haproxy build environment variables
 ARG HAPROXY_BRANCH=3.3
 ARG HAPROXY_MINOR=3.3.0
-ARG HAPROXY_SHA256=922a7ec28772ccb88d4f70b4139299cf2375ed9806789356ecf06e0c953ed0e4
+ARG HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
 
 # Set ENV variables from ARGs for use in RUN commands
 ENV HAPROXY_BRANCH=3.3
 ENV HAPROXY_MINOR=3.3.0
-ENV HAPROXY_SHA256=922a7ec28772ccb88d4f70b4139299cf2375ed9806789356ecf06e0c953ed0e4
+ENV HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
 ENV HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags
 
 RUN \
