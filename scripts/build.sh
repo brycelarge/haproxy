@@ -440,10 +440,14 @@ update_dockerfile() {
     tmpfile=$(mktemp)
 
     # Update the Dockerfile
-    sed -e "s|HAPROXY_BRANCH=.*|HAPROXY_BRANCH=${branch} \\\\|" \
-        -e "s|HAPROXY_MINOR=.*|HAPROXY_MINOR=${version} \\\\|" \
-        -e "s|HAPROXY_SHA256=.*|HAPROXY_SHA256=${sha256} \\\\|" \
-        -e "s|HAPROXY_SRC_URL=.*|HAPROXY_SRC_URL=https://github.com/${GITHUB_REPO}/archive/refs/tags \\\\|" \
+    sed -E \
+        -e "s|^(ARG[[:space:]]+HAPROXY_BRANCH=).*|\1${branch}|" \
+        -e "s|^(ARG[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
+        -e "s|^(ARG[[:space:]]+HAPROXY_SHA256=).*|\1${sha256}|" \
+        -e "s|^(ENV[[:space:]]+HAPROXY_BRANCH=).*|\1${branch}|" \
+        -e "s|^(ENV[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
+        -e "s|^(ENV[[:space:]]+HAPROXY_SHA256=).*|\1${sha256}|" \
+        -e "s|^(ENV[[:space:]]+HAPROXY_SRC_URL=).*|\1https://github.com/${GITHUB_REPO}/archive/refs/tags|" \
         Dockerfile > "$tmpfile"
 
     # Move the temporary file back to the original
