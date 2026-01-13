@@ -68,7 +68,6 @@ else
     exit 1
 fi
 
-: "${HAPROXY_THREADS:=4}"
 : "${QUIC_MAX_AGE:=86400}"
 : "${H3_29_SUPPORT:=false}"
 : "${MIXED_SSL_MODE:=false}"
@@ -100,10 +99,6 @@ cat <<EOF >> "$HAPROXY_CFG"
 global
     daemon
     hard-stop-after 15m
-
-    # Performance Optimizations
-    nbthread ${HAPROXY_THREADS}
-    cpu-map auto:1/1-${HAPROXY_THREADS} 0-$((HAPROXY_THREADS-1))
 
     # acme thumbprnt
     setenv ACCOUNT_THUMBPRINT '${ACCOUNT_THUMBPRINT}'
