@@ -286,7 +286,6 @@ frontend https-offloading-ip-protection
     mode            http
     log             global
     option          http-keep-alive
-    option          forwardfor
     option          httplog
 
     http-request    set-var(txn.txnhost) hdr(host)
@@ -296,6 +295,7 @@ frontend https-offloading-ip-protection
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
+    http-request add-header X-Forwarded-For %[src] if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
@@ -342,7 +342,6 @@ frontend https-offloading
     mode            http
     log             global
     option          http-keep-alive
-    option          forwardfor
     option          httplog
 
     # Add proxy protocol handling
@@ -353,6 +352,7 @@ frontend https-offloading
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
+    http-request add-header X-Forwarded-For %[src] if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
 
     # Remove server information headers
     http-response del-header ^Server:.*$
