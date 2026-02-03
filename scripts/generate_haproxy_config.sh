@@ -235,6 +235,7 @@ frontend http
 
     # Proxy headers
     http-request set-header X-Forwarded-Proto http if !is_acme_challenge
+    http-request add-header X-Forwarded-For %[src] if !is_acme_challenge
 
     # Only redirect non-ACME traffic to HTTPS
     http-request redirect scheme https if !is_acme_challenge
