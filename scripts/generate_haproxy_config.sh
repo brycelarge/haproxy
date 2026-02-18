@@ -190,15 +190,15 @@ EOF
 # Replace placeholders with YAML data
 replace_placeholder "# \[GLOBALS PLACEHOLDER\]" '.global[]' '    '
 replace_placeholder "# \[DEFAULTS PLACEHOLDER\]" '.defaults[]' '    '
-replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http.config[]' '    '
-replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading.config[]' '    '
+replace_placeholder "# \[HTTP-FRONTEND PLACEHOLDER\]" '.frontend.http.raw[]' '    '
+replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING PLACEHOLDER\]" '.frontend.https-offloading.raw[]' '    '
 
 if [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
-    replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.config[]' '    '
+    replace_placeholder "# \[HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER\]" '.frontend.https-offloading-ip-protection.raw[]' '    '
 fi
 
 if [ "$MIXED_SSL_MODE" = "true" ]; then
-    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https.config[]' '    '
+    replace_placeholder "# \[HTTPS-FRONTEND EXTRA PLACEHOLDER\]" '.frontend.https.raw[]' '    '
 elif [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     # Generate individual ACLs for frontend-offloading-ip-protection
     while read -r domain; do
@@ -424,11 +424,10 @@ generate_backend_configs() {
             http_check_config=$(echo "$backend" | jq -r '.http_check[]? | "    http-check " + .')
         fi
 
-        # Handle extra_config directives
+        # Handle raw directives
         extra_config=""
-        if echo "$backend" | jq -e '.extra_config | length > 0' > /dev/null 2>&1; then
-            # Add extra_config directives without any prefix
-            extra_config=$(echo "$backend" | jq -r '.extra_config[]? | "    " + .')
+        if echo "$backend" | jq -e '.raw | length > 0' > /dev/null 2>&1; then
+            extra_config=$(echo "$backend" | jq -r '.raw[]? | "    " + .')
         fi
 
         health_check=""
