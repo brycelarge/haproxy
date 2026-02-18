@@ -228,17 +228,10 @@ LABEL maintainer="Bryce Large" \
       org.opencontainers.image.version="${HAPROXY_MINOR}" \
       org.opencontainers.image.source="https://github.com/brycelarge/haproxy"
 
-VOLUME ["/config"]
-EXPOSE 80 443 8404
-
-# https://github.com/docker-library/haproxy/issues/200
 WORKDIR /var/lib/haproxy
 
-# ports and volumes
-EXPOSE 80/tcp 443/tcp 443/udp
-VOLUME /config
-VOLUME /var/log/haproxy
-VOLUME /etc/haproxy/certs
+EXPOSE 80/tcp 443/tcp 443/udp 8404/tcp
+VOLUME ["/config", "/var/log/haproxy", "/etc/haproxy/certs"]
 
 # https://www.haproxy.org/download/1.8/doc/management.txt
 # "4. Stopping and restarting HAProxy"
