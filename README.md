@@ -36,7 +36,23 @@ On container startup the following happens in order:
 4. **haproxy** — starts with the generated config
 5. **acme** — issues/renews certificates for every domain in `domain_mappings`, hot-reloads HAProxy when certs change (no restart)
 
-The `http` frontend (port 80) is fully managed — it handles ACME HTTP-01 challenges via a stick table and redirects everything else to HTTPS. You do not configure it in YAML.
+The `http` frontend (port 80) is fully managed. It handles ACME HTTP-01 challenges and redirects everything else to HTTPS. Two scenarios are supported:
+
+- **Single server** — HAProxy is the only thing on port 80. When acme.sh runs it adds the domain to an internal stick table; HAProxy responds to the challenge directly with the correct token. No extra config needed.
+- **Multi-server / shared IP** — Multiple upstream servers share the same public IP and each manage their own certificates (e.g. a WordPress VM and a primary nginx). Set a `default_backend` via `frontend.http.raw` pointing to the upstream. HAProxy checks the stick table first — if the domain is there it responds with the token itself; otherwise the request falls through to the `default_backend` on the upstream.
+
+```yaml
+frontend:
+  http:
+    raw:
+      - default_backend my-upstream-http
+
+backends:
+  - name: my-upstream-http
+    mode: http
+    hosts:
+      - "10.0.0.5:80"
+```
 
 ---
 
