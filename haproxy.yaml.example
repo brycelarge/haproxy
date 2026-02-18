@@ -13,12 +13,7 @@ defaults:
   - timeout tunnel 43200s # 12 hour timeout for websocket
 
 frontend:
-  http:
-    config:
-      - default_backend web-default
   https:
-    config:
-      - default_backend ssl-passthrough
     domains:
       - backend: frontend-offloading
         patterns:
@@ -26,8 +21,7 @@ frontend:
           - .company.org
           - .internal.local
   https-offloading-ip-protection:
-    config:
-      - default_backend protected-service
+    raw:
       - acl network_allowed_src src 192.168.1.100
       - acl network_allowed_xff hdr_ip(X-Forwarded-For) 192.168.1.100
       - http-request deny unless network_allowed_src or network_allowed_xff
@@ -38,7 +32,7 @@ frontend:
           - admin.company.org
           - internal.company.org
   https-offloading:
-    config:
+    raw:
       - http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
 
 domain_mappings:
@@ -142,7 +136,7 @@ backends:
       - "allbackups"  # Use all backup servers simultaneously when active
     http_check:
       - "expect status 200"
-    extra_config:
+    raw:
       - "http-request set-header Host api.example.com"
     hosts:
       - host: "192.168.1.30:8090"  # Primary server
