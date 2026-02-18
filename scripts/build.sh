@@ -5,6 +5,7 @@ set -e
 INCLUDE_DEV=false
 USE_VERSION_2=false
 UPDATE_GITHUB=false
+TAG_AS_NEXT=false
 GITHUB_API="https://api.github.com"
 GITHUB_REPO="haproxy/haproxy"
 VERSION_CACHE_DIR="/tmp/haproxy_version_cache"
@@ -14,13 +15,14 @@ VERSION_CACHE_TTL=86400  # 24 hours in seconds
 export HA_DEBUG=true
 
 # Parse command line arguments FIRST
-while getopts "v:r:d2uh" opt; do
+while getopts "v:r:d2unh" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
         r) DOCKER_REPO="$OPTARG" ;;
         d) INCLUDE_DEV=true ;;
         2) USE_VERSION_2=true ;;
         u) UPDATE_GITHUB=true ;;
+        n) TAG_AS_NEXT=true; INCLUDE_DEV=true ;;
         h) usage ;;
         \?) usage ;;
     esac
@@ -35,6 +37,7 @@ usage() {
     echo "  -d            Include development versions"
     echo "  -2            Use latest version 2.x"
     echo "  -u            Update version cache (ignore cached version)"
+    echo "  -n            Tag latest dev version as 'next' and push"
     echo "  -h            Display this help message"
     exit 1
 }
@@ -409,6 +412,12 @@ build_and_push() {
         docker push "${docker_repo}:latest"
     fi
 
+    if [ "$TAG_AS_NEXT" = "true" ]; then
+        log "Tagging as next..."
+        docker tag "${docker_repo}:${version}" "${docker_repo}:next"
+        docker push "${docker_repo}:next"
+    fi
+
     log "Pushing version..."
     docker push "${docker_repo}:${version}"
 
@@ -475,7 +484,9 @@ main() {
         else
             version=$(get_latest_release "")
             log "Detected latest version: $version"
-            tag_as_latest=true
+            if [ "$TAG_AS_NEXT" = "false" ]; then
+                tag_as_latest=true
+            fi
         fi
     fi
 
