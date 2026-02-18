@@ -157,6 +157,7 @@ RUN \
         libssl3 \
         rsyslog \
         inotify-tools \
+        gettext \
         socat \
         libcap \
         iptables \
