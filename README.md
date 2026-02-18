@@ -11,7 +11,7 @@ A self-contained Docker image that acts as a **TLS-terminating reverse proxy** f
 2. [Quick Start](#quick-start)
 3. [SSL Modes](#ssl-modes)
     - [Standard Mode](#standard-mode)
-    - [Mixed SSL Mode](#mixed-ssl-mode-mixed_ssl_modefalse--true)
+    - [Mixed SSL Mode](#mixed-ssl-mode)
     - [IP Protection Mode](#ip-protection-mode)
 4. [YAML Configuration Reference](#yaml-configuration-reference)
     - [global](#global)
@@ -24,8 +24,7 @@ A self-contained Docker image that acts as a **TLS-terminating reverse proxy** f
     - [HTTP Challenge](#http-challenge)
     - [DNS Challenge (Cloudflare)](#dns-challenge-cloudflare)
 7. [Architecture](#architecture)
-8. [Building the Image](#building-the-image)
-9. [Troubleshooting](#troubleshooting)
+8. [Troubleshooting](#troubleshooting)
 
 ## How It Works
 
@@ -324,21 +323,6 @@ acme-setup → haproxy-config → rsyslog → haproxy → acme
 2. Injects `global[]` and `defaults[]` YAML entries via `sed` placeholders
 3. Injects `frontend.*.raw[]` entries via `sed` placeholders
 4. Generates `backend` blocks dynamically from `backends[]` and `domain_mappings[]`
-
----
-
-## Building the Image
-
-```bash
-# Build latest stable
-./scripts/build.sh
-
-# Build including dev releases
-./scripts/build.sh -d
-
-# Build dev release and push as :next tag
-./scripts/build.sh -n
-```
 
 ---
 
