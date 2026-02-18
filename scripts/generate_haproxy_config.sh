@@ -629,15 +629,18 @@ generate_backend_configs() {
 
     debug_log "Generating backend configurations"
     echo "$JSON_CONFIG" | jq -c '.backends[]' | while read -r backend; do
-        name=$(echo "$backend" | jq -r '.name')
-        mode=$(echo "$backend" | jq -r '.mode // "http"')
-        timeout_connect=$(echo "$backend" | jq -r '.timeout_connect')
-        timeout_server=$(echo "$backend" | jq -r '.timeout_server')
-        hosts=$(echo "$backend" | jq -r '.hosts[]')
-        is_ssl=$(echo "$backend" | jq -r '.ssl // false')
-        ssl_verify=$(echo "$backend" | jq -r '.ssl_verify // false')
-        enable_h2=$(echo "$backend" | jq -r '.enable_h2 // false')
-        use_send_proxy=$(echo "$backend" | jq -r '.use_send_proxy // false')
+        # Single jq call to extract all scalar fields at once
+        read -r name mode is_ssl ssl_verify enable_h2 use_send_proxy has_cache < <(
+            echo "$backend" | jq -r '[
+                .name,
+                (.mode // "http"),
+                (.ssl // false | tostring),
+                (.ssl_verify // false | tostring),
+                (.enable_h2 // false | tostring),
+                (.use_send_proxy // false | tostring),
+                (.cache == true | tostring)
+            ] | @tsv'
+        )
 
         debug_log "Processing backend: $name"
 
@@ -649,14 +652,14 @@ generate_backend_configs() {
         fi
 
         # Get hosts array
-        if [ -z "$hosts" ] || [ "$hosts" = "null" ]; then
+        if ! echo "$backend" | jq -e '.hosts | length > 0' > /dev/null 2>&1; then
             debug_log "Warning: No hosts defined for backend $name" | ts '%Y-%m-%d %H:%M:%S'
             continue
         fi
 
         # Handle options and other directives
         options_config=""
-        if echo "$backend" | jq -e '.options[]' > /dev/null 2>&1; then
+        if echo "$backend" | jq -e '.options | length > 0' > /dev/null 2>&1; then
             # Process each option, handling special cases for httpchk with headers
             options_config=$(echo "$backend" | jq -r '.options[]?' | while read -r option; do
                 # Check if this is an httpchk option with headers that contain \r\n
@@ -672,27 +675,23 @@ generate_backend_configs() {
 
         # Handle http-check directives separately
         http_check_config=""
-        if echo "$backend" | jq -e '.http_check[]' > /dev/null 2>&1; then
+        if echo "$backend" | jq -e '.http_check | length > 0' > /dev/null 2>&1; then
             # Add http-check directives without "option" prefix
             http_check_config=$(echo "$backend" | jq -r '.http_check[]? | "    http-check " + .')
         fi
 
         # Handle extra_config directives
         extra_config=""
-        if echo "$backend" | jq -e '.extra_config[]' > /dev/null 2>&1; then
+        if echo "$backend" | jq -e '.extra_config | length > 0' > /dev/null 2>&1; then
             # Add extra_config directives without any prefix
             extra_config=$(echo "$backend" | jq -r '.extra_config[]? | "    " + .')
         fi
-
-        # Set default values for timeout if they are null or empty
-        timeout_connect=${timeout_connect:-5000}
-        timeout_server=${timeout_server:-50000}
 
         health_check=""
         retries="retries 3"
 
         cache=""
-        if echo "$backend" | jq -e '.cache == true' > /dev/null; then
+        if [ "$has_cache" = "true" ]; then
             cache="acl is_image path_end -i .jpg .jpeg .png .gif
     http-request cache-use my-cache if is_image
     http-response cache-store my-cache if { res.hdr(Content-Type) -m sub image/ }
@@ -723,81 +722,75 @@ generate_backend_configs() {
         server_lines=""
         server_count=1
         while read -r host_entry; do
-            if [ -n "$host_entry" ]; then
-                # Check if the host entry is a simple string or a JSON object
-                if [[ "$host_entry" == {* ]]; then
-                    # Parse JSON object for host and check config
-                    host=$(echo "$host_entry" | jq -r '.host')
+            [ -z "$host_entry" ] && continue
 
-                    # Check if there's a check configuration for this host
-                    host_check=""
-                    if echo "$host_entry" | jq -e '.check' > /dev/null 2>&1; then
-                        check_type=$(echo "$host_entry" | jq -r '.check.type // "tcp"')
-                        check_interval=$(echo "$host_entry" | jq -r '.check.interval // "2000"')
-                        check_fall=$(echo "$host_entry" | jq -r '.check.fall // "3"')
-                        check_rise=$(echo "$host_entry" | jq -r '.check.rise // "2"')
-                        check_slowstart=$(echo "$host_entry" | jq -r '.check.slowstart // false')
+            host_check=""
+            host_enable_h2="false"
 
-                        host_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
-                        if [ "$check_slowstart" != "false" ]; then
-                            host_check="${host_check} slowstart ${check_slowstart}"
-                        fi
+            # Check if the host entry is a simple string or a JSON object
+            if [[ "$host_entry" == {* ]]; then
+                # Single jq call for all host fields
+                read -r host check_type check_interval check_fall check_rise check_slowstart check_uri host_h2 < <(
+                    echo "$host_entry" | jq -r '[
+                        .host,
+                        (.check.type // "tcp"),
+                        (.check.interval // "2000" | tostring),
+                        (.check.fall // "3" | tostring),
+                        (.check.rise // "2" | tostring),
+                        (.check.slowstart // false | tostring),
+                        (.check.uri // "/"),
+                        (.enable_h2 // false | tostring)
+                    ] | @tsv'
+                )
 
-                        # Add health check option based on check type if not already defined
-                        if [ -z "$health_check" ]; then
-                            case $check_type in
-                                http)
-                                    check_uri=$(echo "$host_entry" | jq -r '.check.uri // "/"')
-                                    health_check="option httpchk GET ${check_uri}"
-                                    ;;
-                                ssl)
-                                    check_verify=$(echo "$host_entry" | jq -r '.check.verify // "none"')
-                                    health_check="option ssl-hello-chk"
-                                    ;;
-                                tcp)
-                                    # TCP check doesn't need additional parameters
-                                    ;;
-                                *)
-                                    debug_log "Warning: Unknown check type '${check_type}' for host in backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
-                                    ;;
-                            esac
-                        fi
+                if echo "$host_entry" | jq -e '.check' > /dev/null 2>&1; then
+                    host_check="check inter ${check_interval} fall ${check_fall} rise ${check_rise}"
+                    if [ "$check_slowstart" != "false" ]; then
+                        host_check="${host_check} slowstart ${check_slowstart}"
                     fi
-                else
-                    # Simple string host - no check config
-                    host="$host_entry"
-                    host_check=""
+
+                    # Add health check option based on check type if not already defined
+                    if [ -z "$health_check" ]; then
+                        case $check_type in
+                            http)
+                                health_check="option httpchk GET ${check_uri}"
+                                ;;
+                            ssl)
+                                health_check="option ssl-hello-chk"
+                                ;;
+                            tcp)
+                                # TCP check doesn't need additional parameters
+                                ;;
+                            *)
+                                debug_log "Warning: Unknown check type '${check_type}' for host in backend '${name}'. Using TCP check." | ts '%Y-%m-%d %H:%M:%S'
+                                ;;
+                        esac
+                    fi
                 fi
-
-                # Parse host to extract address and options (like 'backup')
-                host_address=$(echo "$host" | awk '{print $1}' | tr -d '"')
-                host_options=$(echo "$host" | cut -d' ' -f2- -s | tr -d '"')
-
-                # Check for per-host enable_h2 setting
-                host_enable_h2="false"
-                if [ "$is_json" = "true" ]; then
-                    # For JSON object hosts, check for enable_h2 in the host entry
-                    host_enable_h2=$(echo "$host_entry" | jq -r '.enable_h2 // "false"')
-                fi
-
-                # If host explicitly sets enable_h2, use that value
-                # Otherwise fall back to backend-level setting
-                if [ "$host_enable_h2" = "false" ] && [ "$enable_h2" = "true" ]; then
-                    host_enable_h2="true"
-                elif [ "$host_enable_h2" = "true" ]; then
-                    # Host explicitly enables H2 even if backend doesn't
-                    host_enable_h2="true"
-                fi
-
-                h2_options=""
-                if [ "$host_enable_h2" = "true" ]; then
-                    h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
-                fi
-
-                server_lines="${server_lines}    server ${name}-srv${server_count} ${host_address}${ssl_options:+ $ssl_options}${h2_options}${host_check:+ $host_check}${host_options:+ $host_options}${send_proxy:+ $send_proxy}
-"
-                server_count=$((server_count + 1))
+                host_enable_h2="$host_h2"
+            else
+                # Simple string host - no check config
+                host="$host_entry"
             fi
+
+            # Parse host to extract address and options (like 'backup')
+            host_address=$(echo "$host" | awk '{print $1}' | tr -d '"')
+            host_options=$(echo "$host" | cut -d' ' -f2- -s | tr -d '"')
+
+            # If host explicitly sets enable_h2, use that value
+            # Otherwise fall back to backend-level setting
+            if [ "$host_enable_h2" = "false" ] && [ "$enable_h2" = "true" ]; then
+                host_enable_h2="true"
+            fi
+
+            h2_options=""
+            if [ "$host_enable_h2" = "true" ]; then
+                h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
+            fi
+
+            server_lines="${server_lines}    server ${name}-srv${server_count} ${host_address}${ssl_options:+ $ssl_options}${h2_options}${host_check:+ $host_check}${host_options:+ $host_options}${send_proxy:+ $send_proxy}
+"
+            server_count=$((server_count + 1))
         done < <(echo "$backend" | jq -c '.hosts[]')
 
         debug_log "Server lines for backend $name: $server_lines"
