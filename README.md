@@ -27,7 +27,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 10. [Architecture](#architecture)
     - [Service Structure](#service-structure)
     - [ACME HTTP-01 Challenge Implementation](#acme-http-01-challenge-implementation)
-11. [HAProxy 3.2 Features](#haproxy-32-features)
+11. [HAProxy 3.4 Features](#haproxy-34-features)
     - [HTTP/2 and QUIC Improvements](#http2-and-quic-improvements)
     - [Performance Optimizations](#performance-optimizations)
     - [Implementation Details](#implementation-details)
@@ -40,7 +40,7 @@ A high-performance HAProxy Docker image with QUIC support, automated SSL/TLS cer
 
 ## Features
 
-### HAProxy 3.2 Features
+### HAProxy 3.4 Features
 - QUIC/HTTP3 protocol support
 - Enhanced performance with optimized buffer handling
 - HTTP/2 idle connection checking with `idle-ping`
@@ -130,15 +130,7 @@ defaults:
 
 # Frontend Configurations
 frontend:
-  http:
-    config:
-      - bind *:80 user haproxy group haproxy
-      - default_backend web-backend
-
   https:
-    config:
-      - bind *:443 user haproxy group haproxy
-      - default_backend secure-backend
     domains:
       - backend: frontend-offloading
         patterns:
@@ -147,8 +139,7 @@ frontend:
 
   # IP-restricted frontend example
   https-offloading-ip-protection:
-    config:
-      - default_backend restricted-backend
+    raw:
       - acl network_allowed src 192.168.1.0/24
       - acl from_allowed_ip req.hdr(X-Forwarded-For) -m ip 192.168.1.0/24
       - http-request deny unless from_allowed_ip or network_allowed
@@ -159,8 +150,9 @@ frontend:
           - admin.example.com
 
   https-offloading:
-    config:
-      - default_backend web-backend
+    raw:
+      - acl is_websocket hdr(Upgrade) -i WebSocket
+      - http-request set-header Connection upgrade if is_websocket
 
 # Domain to Backend Mappings
 The `domain_mappings` array serves two crucial purposes:
@@ -503,24 +495,17 @@ environment:
 #### Example with HTTP Challenge
 ```yaml
 # /config/haproxy.yaml
-frontend:
-  http:
-    - bind "${HAPROXY_BIND_IP}:80"
-    - mode http
-    - acl is_acme path_beg /.well-known/acme-challenge/
-    - use_backend acme_backend if is_acme
-    - redirect scheme https if !is_acme
+domain_mappings:
+  - domains:
+    - app1.example.com
+    frontend: https-offloading
+    backend: app1-backend
 
-  https:
-    - bind "${HAPROXY_BIND_IP}:443" ssl crt /config/certs/ alpn h2,http/1.1
-    - mode http
-    - acl host_app1 hdr(host) -i app1.example.com
-    - use_backend app1_backend if host_app1
-
-backend:
-  acme_backend:
-    - mode http
-    - server acme_srv 127.0.0.1:8080
+backends:
+  - name: app1-backend
+    mode: http
+    hosts:
+      - "192.168.1.10:8080"
 ```
 
 ```bash
@@ -581,9 +566,9 @@ The container uses a custom stick table implementation for HTTP-01 challenges:
 3. When a challenge arrives, HAProxy validates it against the stick table
 4. This allows for dynamic certificate issuance without pre-configuration
 
-## HAProxy 3.2 Features
+## HAProxy 3.4 Features
 
-This image leverages several HAProxy 3.2 performance and security enhancements:
+This image leverages several HAProxy 3.4 performance and security enhancements:
 
 ### HTTP/2 and QUIC Improvements
 
