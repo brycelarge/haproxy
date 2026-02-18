@@ -36,23 +36,7 @@ On container startup the following happens in order:
 4. **haproxy** — starts with the generated config
 5. **acme** — issues/renews certificates for every domain in `domain_mappings`, hot-reloads HAProxy when certs change (no restart)
 
-The `http` frontend (port 80) is fully managed. It handles ACME HTTP-01 challenges and redirects everything else to HTTPS. Two scenarios are supported:
-
-- **Single server** — HAProxy is the only thing on port 80. When acme.sh runs it adds the domain to an internal stick table; HAProxy responds to the challenge directly with the correct token. No extra config needed.
-- **Multi-server / shared IP** — Multiple upstream servers share the same public IP and each manage their own certificates (e.g. a WordPress VM and a primary nginx). Set a `default_backend` via `frontend.http.raw` pointing to the upstream. HAProxy checks the stick table first — if the domain is there it responds with the token itself; otherwise the request falls through to the `default_backend` on the upstream.
-
-```yaml
-frontend:
-  http:
-    raw:
-      - default_backend my-upstream-http
-
-backends:
-  - name: my-upstream-http
-    mode: http
-    hosts:
-      - "10.0.0.5:80"
-```
+The `http` frontend (port 80) is fully managed. It handles ACME HTTP-01 challenges via an internal stick table and redirects everything else to HTTPS. For multi-server setups where an upstream manages its own certificates, use `MIXED_SSL_MODE=true` — see [Mixed SSL Mode](#mixed-ssl-mode).
 
 ---
 
@@ -91,12 +75,21 @@ client → :443 TCP/UDP → https-offloading frontend → backend
 
 ### Mixed SSL Mode
 
-`MIXED_SSL_MODE=true` — A TCP passthrough frontend binds to `:443`, inspects SNI, and forwards to an internal unix socket where TLS is terminated. Preserves the original client IP via PROXY protocol (`send-proxy-v2-ssl-cn`). HTTP/3 QUIC binds to UDP `:8443` internally.
+`MIXED_SSL_MODE=true` — A TCP passthrough frontend binds to `:443`, inspects SNI, and routes traffic by domain. This enables two things:
+
+1. **Client IP preservation** — traffic destined for HAProxy-managed backends is forwarded to an internal unix socket via PROXY protocol (`send-proxy-v2-ssl-cn`) where TLS is terminated
+2. **Upstream TLS passthrough** — traffic for domains managed by an upstream server (e.g. a WordPress VM running its own Let's Encrypt) is passed through directly, allowing the upstream to terminate TLS and handle its own ACME challenges
 
 ```
+# HAProxy-managed domains:
 client → :443 TCP → frontend https (tcp, SNI routing)
                        → unix socket → https-offloading (TLS termination) → backend
+
+# Upstream-managed domains (e.g. WordPress VM):
+client → :443 TCP → frontend https (tcp, SNI routing) → upstream:443 (upstream handles TLS + its own certs)
 ```
+
+HTTP/3 QUIC binds to UDP `:8443` internally in this mode.
 
 ### IP Protection Mode
 
