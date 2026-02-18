@@ -121,7 +121,7 @@ RUN \
     ' && \
     eval "make -C /usr/src/haproxy -j $nproc all $HAPROXY_MAKE_ARGS" && \
     eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_ARGS" && \
-    make -C /usr/src/haproxy TARGET=linux2628 install-bin install-man
+    make -C /usr/src/haproxy TARGET=linux-musl install-man
 
 # start from fresh to remove all build layers and packages
 FROM brycelarge/alpine-baseimage:3.21
