@@ -91,6 +91,20 @@ client → :443 TCP → frontend https (tcp, SNI routing) → upstream:443 (upst
 
 HTTP/3 QUIC binds to UDP `:8443` internally in this mode.
 
+When `MIXED_SSL_MODE=true`, set a `default_backend` on both frontends pointing to the upstream server. The upstream handles its own TLS and Let's Encrypt — HAProxy just routes traffic to it:
+
+```yaml
+frontend:
+  http:
+    raw:
+      - default_backend upstream-http
+  https:
+    raw:
+      - default_backend upstream-https
+```
+
+HAProxy's stick table is checked first on port 80 — domains this container manages are answered directly; everything else falls through to `upstream-http`.
+
 ### IP Protection Mode
 
 `FRONTEND_IP_PROTECTION=true` — Adds a second SSL offloading frontend (`https-offloading-ip-protection`) on a separate unix socket. Use it to restrict certain domains to specific source IPs. Add restriction rules via `frontend.https-offloading-ip-protection.raw` and map domains to it in `domain_mappings`.
