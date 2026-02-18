@@ -59,6 +59,7 @@ while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
 done
 
 # Read the thumbprint from the file
+export ACCOUNT_THUMBPRINT
 ACCOUNT_THUMBPRINT=$(cat "$ACME_THUMBPRINT_PATH")
 
 : "${QUIC_MAX_AGE:=86400}"
@@ -68,6 +69,7 @@ ACCOUNT_THUMBPRINT=$(cat "$ACME_THUMBPRINT_PATH")
 if [ -z "${HAPROXY_BIND_IP}" ]; then
     HAPROXY_BIND_IP="0.0.0.0"
 fi
+export HAPROXY_BIND_IP
 
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
@@ -80,6 +82,7 @@ if [ "$H3_29_SUPPORT" = "true" ]; then
 else
     ALT_SVC="h3=\\\":${QUIC_PORT}\\\"; ma=${QUIC_MAX_AGE}"
 fi
+export ALT_SVC
 
 if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
     PIDFILE="
@@ -87,6 +90,7 @@ if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
 else
     PIDFILE=""
 fi
+export PIDFILE
 
 # Generate HAProxy global configuration
 envsubst '${ACCOUNT_THUMBPRINT} ${PIDFILE}' \
@@ -104,6 +108,7 @@ if [ "${MIXED_SSL_MODE}" != "true" ]; then
     # Respond 404 if not valid domain and not in mixed mode
     http-request return status 404 if is_acme_challenge !valid_acme_domain !valid_acme_sub_domain"
 fi
+export MIXED_MODE_404_RESPONSE
 
 # Generate HAProxy http frontend configuration
 envsubst '${HAPROXY_BIND_IP} ${ACCOUNT_THUMBPRINT} ${MIXED_MODE_404_RESPONSE}' \
@@ -135,10 +140,12 @@ PRIMARY_BIND="unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy"
 if [ "$MIXED_SSL_MODE" != "true" ]; then
     PRIMARY_BIND="${HAPROXY_BIND_IP}:443"
 fi
+export PRIMARY_BIND
 
 # Generate main SSL offloading frontend (HTTP/2 + HTTP/3 QUIC)
 # Binds directly to :443 in standard mode, or to a unix socket in MIXED_SSL_MODE
 if [ "$HAS_CERTS" = "true" ]; then
+    export QUIC_BIND_PORT
     QUIC_BIND_PORT=$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443")
     envsubst '${PRIMARY_BIND} ${HAPROXY_BIND_IP} ${QUIC_BIND_PORT} ${ALT_SVC}' \
         < /scripts/templates/frontend-https-offloading.cfg.tmpl >> "$HAPROXY_CFG"
