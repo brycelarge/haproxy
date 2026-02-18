@@ -1,0 +1,20 @@
+frontend https
+    bind        ${HAPROXY_BIND_IP}:443
+    mode        tcp
+    log         global
+    option      tcplog
+    option      dontlognull
+
+    # Enhanced TCP logging format
+    log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
+
+    # Strict TLS inspection with timeout
+    tcp-request inspect-delay 10s
+    tcp-request content accept if { req.ssl_hello_type 1 }
+
+    # Placed by yaml https_frontend_rules
+    # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
+
+    # Placed by yaml domain_mappings
+    # [HTTPS-FRONTEND EXTRA PLACEHOLDER]
+

@@ -1,0 +1,59 @@
+defaults
+    log global
+    mode http
+    option dontlognull
+
+    # Placed by yaml defaults
+    # [DEFAULTS PLACEHOLDER]
+
+    # Our format here will produce 2021-01-01 08:00:01.565 +0200
+    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
+    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %[ssl_fc_sni]/%sslv/%sslc"
+
+    # Basic compression settings
+    compression algo gzip deflate
+
+    # File types to compress
+    compression type text/html
+    compression type text/plain
+    compression type text/css
+    compression type text/xml
+    compression type text/javascript
+    compression type text/calendar
+    compression type text/markdown
+    compression type text/vcard
+    compression type text/vtt
+    compression type text/x-component
+    compression type text/x-cross-domain-policy
+    compression type application/javascript
+    compression type application/x-javascript
+    compression type application/json
+    compression type application/ld+json
+    compression type application/manifest+json
+    compression type application/schema+json
+    compression type application/vnd.api+json
+    compression type application/vnd.geo+json
+    compression type application/xml
+    compression type application/xhtml+xml
+    compression type application/rss+xml
+    compression type application/atom+xml
+    compression type application/soap+xml
+    compression type application/x-httpd-php
+    compression type font/collection
+    compression type font/opentype
+    compression type font/otf
+    compression type font/ttf
+    compression type application/x-font-ttf
+    compression type application/x-font-opentype
+    compression type application/x-font-truetype
+    compression type application/vnd.ms-fontobject
+    compression type application/font-sfnt
+    compression type application/font-woff
+    compression type application/font-woff2
+    compression type image/svg+xml
+    compression type image/x-icon
+    compression type application/pdf
+    compression type application/x-yaml
+    compression type application/yaml
+    compression type application/rtf
+

@@ -1,0 +1,7 @@
+backend frontend-offloading-ip-protection
+    mode tcp
+    id 11
+    log global
+    retries 3
+    server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn
+

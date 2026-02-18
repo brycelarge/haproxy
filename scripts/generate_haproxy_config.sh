@@ -52,8 +52,6 @@ if [ "$(cat "$LOCK_FILE")" != "$$" ]; then
     exit 1
 fi
 
-# Cleanup lock file on exit
-trap 'rm -f "$LOCK_FILE"' EXIT
 
 while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
     echo "[haproxy] Waiting for $ACME_THUMBPRINT_PATH to be created before creating configuration..." | ts '%Y-%m-%d %H:%M:%S'
@@ -61,12 +59,7 @@ while [ ! -f "$ACME_THUMBPRINT_PATH" ]; do
 done
 
 # Read the thumbprint from the file
-if [ -f /config/acme/ca/thumbprint ]; then
-    ACCOUNT_THUMBPRINT=$(cat /config/acme/ca/thumbprint)
-else
-    echo "Error: ACME account thumbprint not found"
-    exit 1
-fi
+ACCOUNT_THUMBPRINT=$(cat "$ACME_THUMBPRINT_PATH")
 
 : "${QUIC_MAX_AGE:=86400}"
 : "${H3_29_SUPPORT:=false}"
@@ -95,113 +88,15 @@ else
     PIDFILE=""
 fi
 
-cat <<EOF >> "$HAPROXY_CFG"
-global
-    daemon
-    hard-stop-after 15m
-
-    # acme thumbprnt
-    setenv ACCOUNT_THUMBPRINT '${ACCOUNT_THUMBPRINT}'
-
-    # Default socket configurations
-    # used for newer reload mechanism. See https://www.haproxy.com/blog/hitless-reloads-with-haproxy-howto/
-    stats socket /var/lib/haproxy/admin.sock level admin mode 660 expose-fd listeners
-    stats timeout 30s
-    ${PIDFILE}
-
-    # [GLOBALS PLACEHOLDER]
-
-    # rsyslogd has created a socket to listen on at /var/lib/haproxy/dev/log
-    # haproxy is chrooted to /var/lib/haproxy/ and can only write therein
-    log /var/lib/haproxy/dev/log local0
-
-    # generated 2022-05-03, Mozilla Guideline v5.6, HAProxy 2.5, OpenSSL 1.1.1n, intermediate configuration
-    # https://ssl-config.mozilla.org/#server=haproxy&version=2.5&config=intermediate&openssl=1.1.1n&guideline=5.6
-    # intermediate configuration
-    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
-    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-    ssl-default-bind-options prefer-client-ciphers no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-    ssl-default-server-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
-    ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
-    ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
-
-    ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
-    tune.ssl.default-dh-param 2048
-
-EOF
+# Generate HAProxy global configuration
+envsubst '${ACCOUNT_THUMBPRINT} ${PIDFILE}' \
+    < /scripts/templates/global.cfg.tmpl >> "$HAPROXY_CFG"
 
 # Generate HAProxy defaults configuration
-cat <<EOF >> "$HAPROXY_CFG"
-defaults
-    log global
-    mode http
-    option dontlognull
-
-    # Placed by yaml defaults
-    # [DEFAULTS PLACEHOLDER]
-
-    # Our format here will produce 2021-01-01 08:00:01.565 +0200
-    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
-    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %[ssl_fc_sni]/%sslv/%sslc"
-
-    # Basic compression settings
-    compression algo gzip deflate
-
-    # File types to compress
-    compression type text/html
-    compression type text/plain
-    compression type text/css
-    compression type text/xml
-    compression type text/javascript
-    compression type text/calendar
-    compression type text/markdown
-    compression type text/vcard
-    compression type text/vtt
-    compression type text/x-component
-    compression type text/x-cross-domain-policy
-    compression type application/javascript
-    compression type application/x-javascript
-    compression type application/json
-    compression type application/ld+json
-    compression type application/manifest+json
-    compression type application/schema+json
-    compression type application/vnd.api+json
-    compression type application/vnd.geo+json
-    compression type application/xml
-    compression type application/xhtml+xml
-    compression type application/rss+xml
-    compression type application/atom+xml
-    compression type application/soap+xml
-    compression type application/x-httpd-php
-    compression type font/collection
-    compression type font/opentype
-    compression type font/otf
-    compression type font/ttf
-    compression type application/x-font-ttf
-    compression type application/x-font-opentype
-    compression type application/x-font-truetype
-    compression type application/vnd.ms-fontobject
-    compression type application/font-sfnt
-    compression type application/font-woff
-    compression type application/font-woff2
-    compression type image/svg+xml
-    compression type image/x-icon
-    compression type application/pdf
-    compression type application/x-yaml
-    compression type application/yaml
-    compression type application/rtf
-
-EOF
+cat /scripts/templates/defaults.cfg.tmpl >> "$HAPROXY_CFG"
 
 # Generate HAProxy caching configuration
-cat <<EOF >> "$HAPROXY_CFG"
-cache my-cache
-    total-max-size 1024                 # 1GB total cache
-    max-object-size 524288              # 512KB max object size
-    max-age 3600                        # 1 hour
-    process-vary on
-
-EOF
+cat /scripts/templates/cache.cfg.tmpl >> "$HAPROXY_CFG"
 
 MIXED_MODE_404_RESPONSE=""
 if [ "${MIXED_SSL_MODE}" != "true" ]; then
@@ -210,40 +105,9 @@ if [ "${MIXED_SSL_MODE}" != "true" ]; then
     http-request return status 404 if is_acme_challenge !valid_acme_domain !valid_acme_sub_domain"
 fi
 
-cat <<EOF >> "$HAPROXY_CFG"
-frontend http
-    bind            ${HAPROXY_BIND_IP}:80
-    mode            http
-    log             global
-    option          httplog
-
-    # Define a simple stick table to track domains
-    stick-table type string len 100 size 100k expire 300s store http_req_cnt,gpc0
-
-    # Define ACL for ACME challenges
-    acl is_acme_challenge path_beg /.well-known/acme-challenge/
-
-    # Only return responses for domains that were tracked in the stick table
-    # This is checked in a separate script that adds the domains when acme.sh runs
-    acl valid_acme_domain req.hdr(host),field(2,.),table_http_req_cnt(http) gt 0
-    acl valid_acme_sub_domain req.hdr(host),table_http_req_cnt(http) gt 0
-
-    # Fallback to the old method if needed
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_sub_domain
-    http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/)].${ACCOUNT_THUMBPRINT}\n" if is_acme_challenge valid_acme_domain
-    ${MIXED_MODE_404_RESPONSE}
-
-    # Proxy headers
-    http-request set-header X-Forwarded-Proto http if !is_acme_challenge
-    http-request add-header X-Forwarded-For %[src] if !is_acme_challenge
-
-    # Only redirect non-ACME traffic to HTTPS
-    http-request redirect scheme https if !is_acme_challenge
-
-    # Placed by yaml frontend http:
-    # [HTTP-FRONTEND PLACEHOLDER]
-
-EOF
+# Generate HAProxy http frontend configuration
+envsubst '${HAPROXY_BIND_IP} ${ACCOUNT_THUMBPRINT} ${MIXED_MODE_404_RESPONSE}' \
+    < /scripts/templates/frontend-http.cfg.tmpl >> "$HAPROXY_CFG"
 
 # Check if certificate directory exists and has files
 HAS_CERTS=false
@@ -254,161 +118,40 @@ else
     echo "[haproxy] Certificate directory is empty, skipping SSL frontends" | ts '%Y-%m-%d %H:%M:%S'
 fi
 
+# Generate TCP-mode HTTPS frontend for mixed SSL passthrough (MIXED_SSL_MODE=true only)
 if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
-    cat <<EOF >> "$HAPROXY_CFG"
-frontend https
-    bind        ${HAPROXY_BIND_IP}:443
-    mode        tcp
-    log         global
-    option      tcplog
-    option      dontlognull
-
-    # Enhanced TCP logging format
-    log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq %sslc %sslv %{+Q}[ssl_fc_sni] %{+Q}[ssl_fc_protocol] %[ssl_fc_cipher]"
-
-    # Strict TLS inspection with timeout
-    tcp-request inspect-delay 10s
-    tcp-request content accept if { req.ssl_hello_type 1 }
-
-    # Placed by yaml https_frontend_rules
-    # [HTTPS-FRONTEND USE_BACKEND PLACEHOLDER]
-
-    # Placed by yaml domain_mappings
-    # [HTTPS-FRONTEND EXTRA PLACEHOLDER]
-
-EOF
+    envsubst '${HAPROXY_BIND_IP}' \
+        < /scripts/templates/frontend-https-mixed.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
+# Generate SSL offloading frontend with IP protection (FRONTEND_IP_PROTECTION=true only)
+# Binds to a unix socket; the TCP frontend above proxies to it with send-proxy-v2-ssl-cn
 if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
-    cat <<EOF >> "$HAPROXY_CFG"
-frontend https-offloading-ip-protection
-    bind            unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock accept-proxy ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    mode            http
-    log             global
-    option          http-keep-alive
-    option          httplog
-
-    http-request    set-var(txn.txnhost) hdr(host)
-
-    # Placed by yaml frontend https-offloading-ip-protection:
-    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION PLACEHOLDER]
-
-    # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-    http-request add-header X-Forwarded-For %[src] if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-
-    # Remove server information headers
-    http-response del-header ^Server:.*$
-    http-response del-header ^X-Powered.*$
-
-    # Security headers
-    http-response set-header X-Frame-Options sameorigin
-    http-response set-header Strict-Transport-Security "max-age=63072000"
-    http-response set-header X-XSS-Protection "1; mode=block"
-    http-response set-header X-Content-Type-Options nosniff
-    http-response set-header Referrer-Policy no-referrer-when-downgrade
-
-    http-response set-header alt-svc "${ALT_SVC}"
-
-    # Compression controls
-    acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
-    acl has_content_encoding hdr(Content-Encoding) -m found
-    acl accept_encoding hdr(Accept-Encoding) -m found
-
-    # Compression monitoring headers
-    http-response set-header X-Compressed true if { res.comp }
-    http-response del-header X-Compressed if !{ res.comp }
-    http-response set-header Vary Accept-Encoding
-
-    compression offload
-
-    # Placed by yaml domain_mappings
-    # [HTTPS-FRONTEND-OFFLOADING-IP-PROTECTION USE_BACKEND PLACEHOLDER]
-
-EOF
+    envsubst '${ALT_SVC}' \
+        < /scripts/templates/frontend-https-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
 PRIMARY_BIND="unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy"
-if [ $MIXED_SSL_MODE != "true" ]; then
+if [ "$MIXED_SSL_MODE" != "true" ]; then
     PRIMARY_BIND="${HAPROXY_BIND_IP}:443"
 fi
 
-# Only generate HTTPS offloading frontend if certificates exist
+# Generate main SSL offloading frontend (HTTP/2 + HTTP/3 QUIC)
+# Binds directly to :443 in standard mode, or to a unix socket in MIXED_SSL_MODE
 if [ "$HAS_CERTS" = "true" ]; then
-    cat <<EOF >> "$HAPROXY_CFG"
-frontend https-offloading
-    bind            ${PRIMARY_BIND} ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    bind            quic4@${HAPROXY_BIND_IP}:$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443") ssl crt /etc/haproxy/certs/ alpn h3
-    mode            http
-    log             global
-    option          http-keep-alive
-    option          httplog
-
-    # Add proxy protocol handling
-    declare capture request len 40
-    http-request capture req.hdr(X-Forwarded-For) id 0
-
-    http-request    set-var(txn.txnhost) hdr(host)
-
-    # Proxy headers
-    http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-    http-request add-header X-Forwarded-For %[src] if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
-
-    # Remove server information headers
-    http-response del-header ^Server:.*$
-    http-response del-header ^X-Powered.*$
-
-    # Security headers
-    http-response set-header X-Frame-Options sameorigin
-    http-response set-header Strict-Transport-Security "max-age=63072000"
-    http-response set-header X-XSS-Protection "1; mode=block"
-    http-response set-header X-Content-Type-Options nosniff
-    http-response set-header Referrer-Policy no-referrer-when-downgrade
-
-    http-response set-header alt-svc "${ALT_SVC}"
-
-    # Compression controls
-    acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
-    acl has_content_encoding hdr(Content-Encoding) -m found
-    acl accept_encoding hdr(Accept-Encoding) -m found
-
-    # Compression monitoring headers
-    http-response set-header X-Compressed true if { res.comp }
-    http-response del-header X-Compressed if !{ res.comp }
-    http-response set-header Vary Accept-Encoding
-
-    compression offload
-
-    # Placed by yaml domain_mappings
-    # [HTTPS-FRONTEND-OFFLOADING USE_BACKEND PLACEHOLDER]
-    # Placed by yaml frontend https-offloading:
-    # [HTTPS-FRONTEND-OFFLOADING PLACEHOLDER]
-
-EOF
+    QUIC_BIND_PORT=$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443")
+    envsubst '${PRIMARY_BIND} ${HAPROXY_BIND_IP} ${QUIC_BIND_PORT} ${ALT_SVC}' \
+        < /scripts/templates/frontend-https-offloading.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
+# Generate TCP backend that forwards to the SSL offloading unix socket (MIXED_SSL_MODE=true only)
 if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
-    cat <<EOF >> "$HAPROXY_CFG"
-backend frontend-offloading
-    mode tcp
-    id 10
-    log global
-    retries 3
-    server frontend-offloading-srv unix@/var/lib/haproxy/frontend-offloading.sock send-proxy-v2-ssl-cn
-
-EOF
+    cat /scripts/templates/backend-frontend-offloading.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
+# Generate TCP backend that forwards to the IP protection unix socket (FRONTEND_IP_PROTECTION=true only)
 if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
-    cat <<EOF >> "$HAPROXY_CFG"
-backend frontend-offloading-ip-protection
-    mode tcp
-    id 11
-    log global
-    retries 3
-    server frontend-offloading-ip-protection-srv unix@/var/lib/haproxy/frontend-offloading-ip-protection.sock send-proxy-v2-ssl-cn
-
-EOF
+    cat /scripts/templates/backend-frontend-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
 # Convert YAML to JSON and check for errors
@@ -500,12 +243,6 @@ get_domain_regex() {
         # For subdomains - support multiple levels of subdomains
         echo "^([^\.]+\.)*${ESCAPED_DOMAIN}(:([0-9]){1,5})?\$"
     fi
-}
-
-# Helper function to extract domain from match condition
-get_match_domain() {
-    local match_condition="$1"
-    echo "$match_condition" | sed 's/.*-i \([^ ]*\)$/\1/'
 }
 
 # Function to generate HTTPS offloading frontend configuration
@@ -814,7 +551,6 @@ EOF
 } >> "$HAPROXY_CFG"
 
         backend_id=$((backend_id + 1))
-        server_id=$((server_id + 1))
     done
 }
 
