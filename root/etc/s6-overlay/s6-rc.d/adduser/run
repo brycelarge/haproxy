@@ -1,6 +1,13 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+if [ -n "${DNS_SERVERS}" ]; then
+    : > /etc/resolv.conf
+    for ns in ${DNS_SERVERS}; do
+        echo "nameserver ${ns}" >> /etc/resolv.conf
+    done
+fi
+
 echo '
 ───────────────────────────────────────
 GID/UID

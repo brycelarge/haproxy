@@ -214,7 +214,8 @@ ENV CONFIG_DIR=/config \
     CONFIG_AUTO_GENERATE=true \
     FRONTEND_IP_PROTECTION=false \
     DEV_MODE=false \
-    DEBUG=false
+    DEBUG=false \
+    DNS_SERVERS="1.1.1.1 1.0.0.1 8.8.8.8"
 
 COPY root/ /
 COPY scripts/ /scripts/

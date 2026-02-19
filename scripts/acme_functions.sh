@@ -159,7 +159,10 @@ issue_cert() {
         debug_log "$ACME_OUTPUT"
         release_lock;
 
-        if echo "$ACME_OUTPUT" | grep -q "Error"; then
+        if echo "$ACME_OUTPUT" | grep -q "Cannot init API for"; then
+            echo "[acme] Certificate issuance failed for ${1}: cannot reach ACME server (network error)" | ts '%Y-%m-%d %H:%M:%S'
+            return 1;
+        elif echo "$ACME_OUTPUT" | grep -q "Error"; then
             echo "[acme] Certificate issuance failed for ${1}" | ts '%Y-%m-%d %H:%M:%S'
             return 1;
         elif echo "$ACME_OUTPUT" | grep -q "key authorization file from the server did not match this challenge"; then
@@ -178,7 +181,10 @@ issue_cert() {
         debug_log "$ACME_OUTPUT"
         release_lock;
 
-        if echo "$ACME_OUTPUT" | grep -q "Error"; then
+        if echo "$ACME_OUTPUT" | grep -q "Cannot init API for"; then
+            echo "[acme] Certificate issuance failed for ${1}: cannot reach ACME server (network error)" | ts '%Y-%m-%d %H:%M:%S'
+            return 1;
+        elif echo "$ACME_OUTPUT" | grep -q "Error"; then
             echo "[acme] Certificate issuance failed for ${1}" | ts '%Y-%m-%d %H:%M:%S'
             return 1;
         fi
@@ -282,7 +288,10 @@ renew_cert() {
         return 0;
     fi
 
-    if echo "$ACME_OUTPUT" | grep -q "Error"; then
+    if echo "$ACME_OUTPUT" | grep -q "Cannot init API for"; then
+        echo "[acme] Certificate renewal failed for ${domain}: cannot reach ACME server (network error)" | ts '%Y-%m-%d %H:%M:%S'
+        return 1;
+    elif echo "$ACME_OUTPUT" | grep -q "Error"; then
         echo "[acme] Certificate renewal failed for ${domain}" | ts '%Y-%m-%d %H:%M:%S'
         return 1;
     elif echo "$ACME_OUTPUT" | grep -q "key authorization file from the server did not match this challenge"; then
