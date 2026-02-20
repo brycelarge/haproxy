@@ -49,15 +49,15 @@ FROM alpine:3.21 AS haproxy-builder
 COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
-ARG HAPROXY_BRANCH=3.3
-ARG HAPROXY_MINOR=3.3.0
-ARG HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
-
+ARG HAPROXY_BRANCH=3
+ARG HAPROXY_MINOR=3.4-dev5
+ARG HAPROXY_SHA256=79d5e9f55cd2817c15489c45118683f60827fda8492835f60ac16a5f6daff2fa
 # Set ENV variables from ARGs for use in RUN commands
-ENV HAPROXY_BRANCH=3.3
-ENV HAPROXY_MINOR=3.3.0
-ENV HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
-ENV HAPROXY_SRC_URL=https://github.com/haproxy/haproxy/archive/refs/tags
+ENV HAPROXY_BRANCH=3
+ENV HAPROXY_MINOR=3.4-dev5
+ENV HAPROXY_SHA256=79d5e9f55cd2817c15489c45118683f60827fda8492835f60ac16a5f6daff2fa
+
+COPY haproxy.tar.gz /tmp/haproxy.tar.gz
 
 RUN \
     echo "**** Install haproxy build packages ****" && \
@@ -69,15 +69,13 @@ RUN \
         openssl \
         openssl-dev \
         pcre2-dev \
-        curl \
         zlib-dev && \
-    echo "**** Install Haproxy ****" && \
-    curl -sfL "${HAPROXY_SRC_URL}/v${HAPROXY_MINOR}.tar.gz" -o haproxy.tar.gz && \
-    echo "$HAPROXY_SHA256 *haproxy.tar.gz" | sha256sum -c - && \
+    echo "**** Verify and extract Haproxy ****" && \
+    echo "$HAPROXY_SHA256 */tmp/haproxy.tar.gz" | sha256sum -c - && \
     mkdir -p /usr/src && \
-    tar -xzf haproxy.tar.gz -C /usr/src && \
+    tar -xzf /tmp/haproxy.tar.gz -C /usr/src && \
     mv /usr/src/haproxy-* /usr/src/haproxy && \
-    rm haproxy.tar.gz && \
+    rm /tmp/haproxy.tar.gz && \
     echo "**** Cleanup ****" && \
     rm -rf /tmp/*
 
@@ -126,7 +124,7 @@ RUN \
 # start from fresh to remove all build layers and packages
 FROM brycelarge/alpine-baseimage:3.21
 
-ARG HAPROXY_MINOR=3.3.0
+ARG HAPROXY_MINOR=3.4-dev5
 
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls

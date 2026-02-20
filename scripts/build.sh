@@ -280,10 +280,9 @@ get_latest_release() {
     echo "$version"
 }
 
-get_haproxy_sha256() {
+download_haproxy() {
     local version="$1"
-    local tempfile
-    local sha256
+    local dest="$2"
 
     version=$(echo "$version" | xargs)
 
@@ -294,88 +293,22 @@ get_haproxy_sha256() {
 
     local url="https://github.com/${GITHUB_REPO}/archive/refs/tags/v${version}.tar.gz"
     log "Downloading from $url"
-    tempfile=$(mktemp)
-    log "Using temporary file: $tempfile"
 
-    # Download the archive
-    if ! curl -sfL "$url" -o "$tempfile"; then
+    if ! curl -sfL "$url" -o "$dest"; then
         log "Failed to download from $url"
-        rm -f "$tempfile"
+        rm -f "$dest"
         exit 1
     fi
 
-    log "Download completed, checking file size..."
-    local filesize
-    filesize=$(stat -f%z "$tempfile")
-    log "File size: $filesize bytes"
-
-    if [ ! -s "$tempfile" ]; then
+    if [ ! -s "$dest" ]; then
         log "Downloaded file is empty"
-        rm -f "$tempfile"
+        rm -f "$dest"
         exit 1
     fi
 
-    log "Calculating SHA256..."
-    sha256=$(sha256sum "$tempfile" | cut -d' ' -f1)
-    log "Raw SHA256 output: $sha256"
-
-    # Save the archive for inspection
-    if [ "${HA_DEBUG}" = "true" ]; then
-        local debug_file="/tmp/haproxy-${version}.tar.gz"
-        cp "$tempfile" "$debug_file"
-        log "Saved archive to $debug_file for inspection"
-        log "You can verify with: sha256sum $debug_file"
-
-        # Download the file again to verify consistency
-        local verify_file
-        verify_file=$(mktemp)
-        log "Downloading file again to verify consistency..."
-        if curl -sfL "$url" -o "$verify_file"; then
-            local verify_sha256
-            verify_sha256=$(sha256sum "$verify_file" | cut -d' ' -f1)
-            log "Verification download SHA256: $verify_sha256"
-            if [ "$sha256" = "$verify_sha256" ]; then
-                log "SHA256 matches between downloads"
-            else
-                log "WARNING: SHA256 mismatch between downloads!"
-                log "First download:  $sha256"
-                log "Second download: $verify_sha256"
-                # Use the SHA256 from the first download anyway
-                log "Using SHA256 from first download for consistency"
-            fi
-        fi
-        rm -f "$verify_file"
-
-        # Try to get the SHA256 from the GitHub API
-        local api_url="https://api.github.com/repos/${GITHUB_REPO}/git/refs/tags/v${version}"
-        log "Checking GitHub API for tag info: $api_url"
-        local tag_info
-        tag_info=$(curl -sfL "$api_url")
-        if [ -n "$tag_info" ]; then
-            local tag_sha
-            tag_sha=$(echo "$tag_info" | jq -r '.object.sha')
-            log "Tag SHA from GitHub: $tag_sha"
-
-            if [ -n "$tag_sha" ] && [ "$tag_sha" != "null" ]; then
-                local commit_url="https://api.github.com/repos/${GITHUB_REPO}/git/commits/${tag_sha}"
-                log "Checking commit info: $commit_url"
-                local commit_info
-                commit_info=$(curl -sfL "$commit_url")
-                if [ -n "$commit_info" ]; then
-                    local tree_sha
-                    tree_sha=$(echo "$commit_info" | jq -r '.tree.sha')
-                    log "Tree SHA from GitHub: $tree_sha"
-                fi
-            fi
-        fi
-    fi
-
-    rm -f "$tempfile"
-
-    if [ -z "$sha256" ]; then
-        log "Failed to calculate SHA256"
-        exit 1
-    fi
+    local sha256
+    sha256=$(sha256sum "$dest" | cut -d' ' -f1)
+    log "SHA256: $sha256"
 
     if [ "$sha256" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
         log "Got SHA256 of empty file"
@@ -388,9 +321,10 @@ get_haproxy_sha256() {
 build_and_push() {
     local version="$1"
     local docker_repo="$2"
+    local tarball="$3"
     local build_date
     build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    local tag_as_latest="${3:-false}"  # Default to false now
+    local tag_as_latest="${4:-false}"  # Default to false now
 
     version=$(echo "$version" | xargs)
     docker_repo=$(echo "$docker_repo" | xargs)
@@ -422,6 +356,8 @@ build_and_push() {
     docker push "${docker_repo}:${version}"
 
     log "Successfully built and pushed version $version"
+
+    rm -f "$tarball"
 }
 
 update_dockerfile() {
@@ -490,15 +426,19 @@ main() {
         fi
     fi
 
-    # Get the SHA256 hash for this version
-    log "Getting SHA256 for version $version..."
+    # Download tarball once and compute SHA256 from it
+    log "Downloading HAProxy $version..."
+    local tarball="/tmp/haproxy-${version}.tar.gz"
     local sha256
-    sha256=$(get_haproxy_sha256 "$version")
+    sha256=$(download_haproxy "$version" "$tarball")
     if [ -z "$sha256" ]; then
-        log "Error: Could not get SHA256 hash for version $version"
+        log "Error: Could not download or hash version $version"
         exit 1
     fi
     log "Got SHA256: $sha256"
+
+    # Copy tarball to build context so Docker can COPY it in
+    cp "$tarball" "./haproxy.tar.gz"
 
     # Update the Dockerfile with new version and hash
     log "Updating Dockerfile..."
@@ -509,7 +449,9 @@ main() {
         docker_repo="brycelarge/haproxy"
     fi
 
-    build_and_push "$version" "$docker_repo" "$tag_as_latest"
+    build_and_push "$version" "$docker_repo" "$tarball" "$tag_as_latest"
+
+    rm -f "./haproxy.tar.gz"
 }
 
 main
