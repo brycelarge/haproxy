@@ -217,18 +217,41 @@ generate_https_frontend_config() {
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.frontend["https-offloading-ip-protection"].domains[] | select(.backend == "frontend-offloading-ip-protection") | .patterns[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend["https-offloading-ip-protection"].domains[]? | select(.backend == "frontend-offloading-ip-protection") | .patterns[]')
 
-    # Generate individual ACLs for frontend-offloading from the https frontend
-    while read -r domain; do
-        config="${config}    acl            https-offloading req.ssl_sni -m end -i ${domain}
+    if [ -n "$config" ]; then
+        config="${config}    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.frontend.https.domains[] | select(.backend == "frontend-offloading") | .patterns[]')
+    fi
 
-    # Add use_backend rules
-    config="${config}
-    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
-    use_backend frontend-offloading if https-offloading"
+    # Generate per-backend ACL groups from frontend.https.domains in order.
+    # Each group gets a unique ACL name so exact-match entries (e.g. TCP passthrough)
+    # can be listed before wildcard entries and will be evaluated first.
+    local index=0
+    while read -r backend; do
+        local acl_name
+        acl_name="https-sni-$(echo "$backend" | tr -cd '[:alnum:]-' | tr '[:upper:]' '[:lower:]')-${index}"
+        local group_config=""
+
+        while read -r pattern; do
+            [ -z "$pattern" ] && continue
+            # Patterns starting with '.' are wildcard suffix matches; others are exact
+            if [[ "$pattern" == .* ]]; then
+                group_config="${group_config}    acl            ${acl_name} req.ssl_sni -m end -i ${pattern}
+"
+            else
+                group_config="${group_config}    acl            ${acl_name} req.ssl_sni -i ${pattern}
+"
+            fi
+        done < <(echo "$JSON_CONFIG" | jq -r --argjson idx "$index" '.frontend.https.domains[$idx].patterns[]')
+
+        if [ -n "$group_config" ]; then
+            config="${config}${group_config}    use_backend ${backend} if ${acl_name}
+"
+        fi
+
+        index=$((index + 1))
+    done < <(echo "$JSON_CONFIG" | jq -r '.frontend.https.domains[].backend')
 
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
@@ -259,6 +282,20 @@ generate_https_offloading_frontend_config() {
     local seen_certs=""
 
     debug_log "Generating configuration for https-offloading"
+
+    # Generate ACLs and use_backend for IP-protected domains when FRONTEND_IP_PROTECTION=true and MIXED_SSL_MODE=false
+    if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$MIXED_SSL_MODE" != "true" ]; then
+        while read -r domain; do
+            [ -z "$domain" ] && continue
+            acl_config="${acl_config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
+"
+        done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
+
+        if [ -n "$acl_config" ]; then
+            backend_config="    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+"
+        fi
+    fi
 
     # First pass: Generate all unique certificate ACLs
     while read -r domain backend; do
