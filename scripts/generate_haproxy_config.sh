@@ -129,9 +129,10 @@ if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
         < /scripts/templates/frontend-https-mixed.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
-# Generate SSL offloading frontend with IP protection (FRONTEND_IP_PROTECTION=true only)
+# Generate SSL offloading frontend with IP protection (FRONTEND_IP_PROTECTION=true and MIXED_SSL_MODE=true only)
 # Binds to a unix socket; the TCP frontend above proxies to it with send-proxy-v2-ssl-cn
-if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
+# When MIXED_SSL_MODE=false, IP protection is handled inline in the main https-offloading frontend
+if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     envsubst '${ALT_SVC}' \
         < /scripts/templates/frontend-https-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
 fi
@@ -156,8 +157,8 @@ if [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat /scripts/templates/backend-frontend-offloading.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
-# Generate TCP backend that forwards to the IP protection unix socket (FRONTEND_IP_PROTECTION=true only)
-if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
+# Generate TCP backend that forwards to the IP protection unix socket (FRONTEND_IP_PROTECTION=true and MIXED_SSL_MODE=true only)
+if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
     cat /scripts/templates/backend-frontend-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
@@ -283,18 +284,52 @@ generate_https_offloading_frontend_config() {
 
     debug_log "Generating configuration for https-offloading"
 
-    # Generate ACLs and use_backend for IP-protected domains when FRONTEND_IP_PROTECTION=true and MIXED_SSL_MODE=false
+    # When FRONTEND_IP_PROTECTION=true and MIXED_SSL_MODE=false, add IP-protected domains with inline IP checks
     if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$MIXED_SSL_MODE" != "true" ]; then
-        while read -r domain; do
-            [ -z "$domain" ] && continue
-            acl_config="${acl_config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
-"
-        done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
+        # Add IP protection ACLs from YAML directly to this frontend
+        local ip_acl_src=""
+        local ip_acl_xff=""
+        while IFS= read -r line; do
+            if [[ "$line" == *"acl network_allowed_src"* ]]; then
+                ip_acl_src="$line"
+            elif [[ "$line" == *"acl network_allowed_xff"* ]]; then
+                ip_acl_xff="$line"
+            fi
+        done < <(yq eval '.frontend["https-offloading-ip-protection"].raw[]' "$YAML_FILE" 2>/dev/null)
 
-        if [ -n "$acl_config" ]; then
-            backend_config="    use_backend frontend-offloading-ip-protection if https-offloading-ip-protection
+        if [ -n "$ip_acl_src" ] && [ -n "$ip_acl_xff" ]; then
+            acl_config="${acl_config}    ${ip_acl_src}
+"
+            acl_config="${acl_config}    ${ip_acl_xff}
 "
         fi
+
+        # Process IP-protected domains and route them with IP checks
+        while read -r domain backend; do
+            if [ -n "$domain" ] && [ "$domain" != "null" ] && [ "$backend" != "null" ]; then
+                base_domain=$(echo "$domain" | sed 's/.*\.\([^.]*\.[^.]*\.[^.]*\)$/\1/')
+                cert_acl_name="aclcrt_${base_domain}_https_offloading"
+
+                if ! echo "$seen_certs" | grep -F "$cert_acl_name" > /dev/null; then
+                    seen_certs="${seen_certs}${cert_acl_name}
+"
+                    acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "false")
+"
+                    acl_config="${acl_config}    acl ${cert_acl_name} var(txn.txnhost) -m reg -i $(get_domain_regex "$base_domain" "true")
+"
+                fi
+
+                domain_clean=${domain//[.-]/_}
+                acl_config="${acl_config}    acl acl_${domain_clean} var(txn.txnhost) -m str -i ${domain}
+"
+
+                # Route with IP check - must match domain AND (src IP OR X-Forwarded-For IP)
+                backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name} network_allowed_src
+"
+                backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name} network_allowed_xff
+"
+            fi
+        done < <(echo "$JSON_CONFIG" | jq -r '.domain_mappings[] | select(.frontend == "https-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[] + " " + .backend' 2>/dev/null || true)
     fi
 
     # First pass: Generate all unique certificate ACLs
