@@ -1,10 +1,10 @@
 #!/bin/sh
 
-TIMEOUT=5
+TIMEOUT=3
 HTTP_PORT=80
 HTTPS_PORT=443
 STATS_SOCKET="/var/lib/haproxy/admin.sock"
-MAX_RETRIES=3
+MAX_RETRIES=1
 
 check_port() {
     local port=$1
@@ -28,7 +28,8 @@ check_stats_socket() {
         return 1
     fi
 
-    if ! echo "show info" | socat "$STATS_SOCKET" stdio > /dev/null 2>&1; then
+    # Check if we can communicate with HAProxy and it's actually responding
+    if ! timeout 3 sh -c "echo 'show info' | socat '$STATS_SOCKET' stdio" | grep -q "Name: HAProxy" 2>/dev/null; then
         echo "Cannot communicate with HAProxy through stats socket"
         return 1
     fi
@@ -48,14 +49,15 @@ check_certificates() {
     for cert in "$certs_dir"/*.pem; do
         [ -f "$cert" ] || continue
 
-        expiry=$(openssl x509 -enddate -noout -in "$cert" | cut -d= -f2)
-        expiry_epoch=$(date -D "%b %d %T %Y %Z" -d "$expiry" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry" +%s 2>/dev/null)
-        warning_epoch=$(date -d "+${warning_days} days" +%s 2>/dev/null || date -j -v "+${warning_days}d" +%s 2>/dev/null)
-
-        if [ "$expiry_epoch" -lt "$(date +%s)" ]; then
+        # Use openssl to check certificate validity (works on all systems)
+        if ! openssl x509 -checkend 0 -noout -in "$cert" >/dev/null 2>&1; then
             echo "Certificate $cert has expired"
             return 1
-        elif [ "$expiry_epoch" -lt "$warning_epoch" ]; then
+        fi
+
+        # Check if cert expires within warning_days (in seconds)
+        warning_seconds=$((warning_days * 86400))
+        if ! openssl x509 -checkend "$warning_seconds" -noout -in "$cert" >/dev/null 2>&1; then
             echo "Warning: Certificate $cert will expire in less than $warning_days days"
             has_warning=1
         fi
