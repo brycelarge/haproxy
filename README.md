@@ -89,11 +89,9 @@ client → :443 TCP → frontend https (tcp, SNI routing)
 client → :443 TCP → frontend https (tcp, SNI routing) → upstream:443 (upstream handles TLS + its own certs)
 ```
 
-HTTP/3 QUIC binds to UDP `:8443` internally in this mode.
-
 **HTTP/3 Port Forwarding Setup (Required for Mixed Mode)**
 
-When using `MIXED_SSL_MODE=true` with HTTP/3, you must configure separate UDP port forwards since HAProxy and your upstream server cannot both bind to UDP 443:
+HAProxy binds HTTP/3 QUIC to UDP `:8443` internally in this mode. You must configure separate UDP port forwards since HAProxy and your upstream server cannot both bind to UDP 443:
 
 | External Port | Protocol | Destination | Purpose |
 |---------------|----------|-------------|---------|
