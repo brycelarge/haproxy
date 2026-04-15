@@ -31,15 +31,23 @@ install_acme() {
 
     echo "[acme] Installing acme.sh...." | ts '%Y-%m-%d %H:%M:%S'
 
-    # Download the master branch archive
+    # Detect OS and download appropriate version
     cd /config/;
-    curl -L -o acme.sh.zip https://github.com/acmesh-official/acme.sh/archive/master.zip
+    if [ -f /etc/alpine-release ]; then
+        echo "[acme] Alpine detected, downloading acme.sh version 3.1.0..." | ts '%Y-%m-%d %H:%M:%S'
+        curl -L -o acme.sh.zip https://github.com/acmesh-official/acme.sh/archive/3.1.0.zip
+        ACME_DIR="acme.sh-3.1.0"
+    else
+        echo "[acme] Debian detected, downloading acme.sh version 3.1.2..." | ts '%Y-%m-%d %H:%M:%S'
+        curl -L -o acme.sh.zip https://github.com/acmesh-official/acme.sh/archive/3.1.2.zip
+        ACME_DIR="acme.sh-3.1.2"
+    fi
 
     # Extract the archive
     unzip -q acme.sh.zip
 
     # Move to the extracted directory
-    cd acme.sh-master
+    cd "${ACME_DIR}"
     # Set permissions
     chmod 755 acme.sh
 
