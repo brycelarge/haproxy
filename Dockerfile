@@ -240,5 +240,5 @@ VOLUME ["/config", "/var/log/haproxy", "/etc/haproxy/certs"]
 STOPSIGNAL SIGUSR1
 
 # Add healthcheck
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD /usr/local/bin/healthcheck.sh
