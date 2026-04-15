@@ -19,6 +19,13 @@ frontend https-offloading
     # Remove server information headers
     http-response del-header ^Server:.*$
     http-response del-header ^X-Powered.*$
+    http-response del-header ^X-Generator:.*$
+    http-response del-header ^X-Drupal-Cache:.*$
+    http-response del-header ^X-Varnish:.*$
+    http-response del-header ^Via:.*$
+    http-response del-header ^X-CF-.*$
+    http-response del-header ^X-nginx.*$
+    http-response del-header ^X-Pingback:.*$
 
     # Security headers
     http-response set-header X-Frame-Options sameorigin
