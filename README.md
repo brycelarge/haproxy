@@ -91,6 +91,26 @@ client → :443 TCP → frontend https (tcp, SNI routing) → upstream:443 (upst
 
 HTTP/3 QUIC binds to UDP `:8443` internally in this mode.
 
+**HTTP/3 Port Forwarding Setup (Required for Mixed Mode)**
+
+When using `MIXED_SSL_MODE=true` with HTTP/3, you must configure separate UDP port forwards since HAProxy and your upstream server cannot both bind to UDP 443:
+
+| External Port | Protocol | Destination | Purpose |
+|---------------|----------|-------------|---------|
+| 443 | TCP | HAProxy:443 | HTTPS traffic to HAProxy |
+| 443 | UDP | Upstream:443 | HTTP/3 QUIC to upstream (e.g., CloudPanel) |
+| 8443 | UDP | HAProxy:8443 | HTTP/3 QUIC to HAProxy-managed domains |
+
+**pfSense Example:**
+
+For domains managed by HAProxy:
+- WAN UDP 443 → HAProxy:8443 (alt-svc header advertises port 8443)
+
+For domains managed by upstream server (e.g., CloudPanel):
+- WAN UDP 443 → CloudPanel:443
+
+**Important:** Use **Pure NAT** (not NAT + Proxy) for UDP port forwards. NAT + Proxy breaks QUIC/HTTP3.
+
 When `MIXED_SSL_MODE=true`, set a `default_backend` on both frontends pointing to the upstream server. The upstream handles its own TLS and Let's Encrypt — HAProxy just routes traffic to it:
 
 ```yaml
@@ -324,7 +344,8 @@ ACME_EMAIL=you@example.com
 |------|----------|---------|
 | 80 | TCP | HTTP + ACME HTTP-01 challenges |
 | 443 | TCP | HTTPS |
-| 443 | UDP | HTTP/3 QUIC |
+| 443 | UDP | HTTP/3 QUIC (standard mode) |
+| 8443 | UDP | HTTP/3 QUIC (mixed SSL mode only) |
 
 ### s6-overlay Service Order
 
