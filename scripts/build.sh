@@ -14,8 +14,11 @@ VERSION_CACHE_TTL=86400  # 24 hours in seconds
 # Enable debug logging
 export HA_DEBUG=true
 
+# Default Dockerfile
+DOCKERFILE="Dockerfile"
+
 # Parse command line arguments FIRST
-while getopts "v:r:d2unh" opt; do
+while getopts "v:r:d2unhf:" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
         r) DOCKER_REPO="$OPTARG" ;;
@@ -23,6 +26,7 @@ while getopts "v:r:d2unh" opt; do
         2) USE_VERSION_2=true ;;
         u) UPDATE_GITHUB=true ;;
         n) TAG_AS_NEXT=true; INCLUDE_DEV=true ;;
+        f) DOCKERFILE="$OPTARG" ;;
         h) usage ;;
         \?) usage ;;
     esac
@@ -34,11 +38,15 @@ usage() {
     echo "Options:"
     echo "  -v VERSION    Specify HAProxy version to build"
     echo "  -r REPO       Specify Docker repository (default: brycelarge/haproxy)"
+    echo "  -f FILE       Specify Dockerfile to use (default: Dockerfile, use Dockerfile.debian for Debian)"
     echo "  -d            Include development versions"
     echo "  -2            Use latest version 2.x"
     echo "  -u            Update version cache (ignore cached version)"
     echo "  -n            Tag latest dev version as 'next' and push"
     echo "  -h            Display this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $(basename "$0") -f Dockerfile.debian -r brycelarge/haproxy-debian"
     exit 1
 }
 
@@ -95,7 +103,7 @@ check_version_cache() {
 
     if [ -f "$cache_file" ]; then
         current_time=$(date +%s)
-        cache_time=$(stat -f %m "$cache_file")
+        cache_time=$(stat -c %Y "$cache_file")
         if [ $((current_time - cache_time)) -lt "$VERSION_CACHE_TTL" ] && [ "$UPDATE_GITHUB" = "false" ]; then
             cached_version=$(cat "$cache_file")
             if [ -n "$cached_version" ]; then
@@ -334,9 +342,10 @@ build_and_push() {
         exit 1
     fi
 
-    log "Building Docker image..."
+    log "Building Docker image using $DOCKERFILE..."
     docker build --platform linux/amd64 \
         --build-arg BUILD_DATE="$build_date" \
+        --file "$DOCKERFILE" \
         --pull \
         -t "${docker_repo}:${version}" .
 
@@ -368,14 +377,14 @@ update_dockerfile() {
     version=$(echo "$version" | xargs)
     sha256=$(echo "$sha256" | xargs)
 
-    log "Update params: version='$version' sha256='$sha256' branch='$branch'"
+    log "Update params: version='$version' sha256='$sha256' branch='$branch' dockerfile='$DOCKERFILE'"
 
     if [ -z "$version" ] || [ -z "$sha256" ] || [ -z "$branch" ]; then
         log "Error: Missing required parameters for Dockerfile update"
         exit 1
     fi
 
-    log "Updating Dockerfile with:"
+    log "Updating $DOCKERFILE with:"
     log "  HAPROXY_BRANCH:  $branch"
     log "  HAPROXY_MINOR:   $version"
     log "  HAPROXY_SHA256:  $sha256"
@@ -384,7 +393,7 @@ update_dockerfile() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    # Update the Dockerfile
+    # Update the specified Dockerfile
     sed -E \
         -e "s|^(ARG[[:space:]]+HAPROXY_BRANCH=).*|\1${branch}|" \
         -e "s|^(ARG[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
@@ -393,15 +402,15 @@ update_dockerfile() {
         -e "s|^(ENV[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
         -e "s|^(ENV[[:space:]]+HAPROXY_SHA256=).*|\1${sha256}|" \
         -e "s|^(ENV[[:space:]]+HAPROXY_SRC_URL=).*|\1https://github.com/${GITHUB_REPO}/archive/refs/tags|" \
-        Dockerfile > "$tmpfile"
+        "$DOCKERFILE" > "$tmpfile"
 
     # Move the temporary file back to the original
-    mv "$tmpfile" Dockerfile
-    rm -f Dockerfile.bak "$tmpfile.bak"
+    mv "$tmpfile" "$DOCKERFILE"
+    rm -f "$DOCKERFILE.bak" "$tmpfile.bak"
 
     # Show the changes
-    log "Current Dockerfile values:"
-    grep -E "HAPROXY_(BRANCH|MINOR|SHA256|SRC_URL)=" Dockerfile | sed 's/^/  /'
+    log "Current $DOCKERFILE values:"
+    grep -E "HAPROXY_(BRANCH|MINOR|SHA256|SRC_URL)=" "$DOCKERFILE" | sed 's/^/  /'
 }
 
 main() {
