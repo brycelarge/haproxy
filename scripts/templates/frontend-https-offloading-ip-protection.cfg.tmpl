@@ -25,7 +25,7 @@ frontend https-offloading-ip-protection
     http-response set-header X-Content-Type-Options nosniff
     http-response set-header Referrer-Policy no-referrer-when-downgrade
 
-    http-response set-header alt-svc "${ALT_SVC}"
+    http-response set-header alt-svc "${ALT_SVC}" if !{ res.hdr(alt-svc) -m found }
 
     # Compression controls
     acl compressed_file path_end .gz .br .zip .png .jpg .jpeg .gif .webp .webm
