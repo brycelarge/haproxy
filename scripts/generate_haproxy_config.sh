@@ -74,9 +74,13 @@ export HAPROXY_BIND_IP
 echo "[haproxy] Generating configuration..." | ts '%Y-%m-%d %H:%M:%S'
 
 # Set the correct port for HTTP/3 alt-svc header based on MIXED_SSL_MODE
-QUIC_PORT="443"
+# When MIXED_SSL_MODE=true, QUIC binds to 8443 and the alt-svc header must match
+if [ "$MIXED_SSL_MODE" = "true" ]; then
+    QUIC_PORT="8443"
+else
+    QUIC_PORT="443"
+fi
 
-# Always use port 443 for the ALT_SVC header since we handle port forwarding internally
 if [ "$H3_29_SUPPORT" = "true" ]; then
     ALT_SVC="h3=\\\":${QUIC_PORT}\\\"; ma=${QUIC_MAX_AGE}, h3-29=\\\":${QUIC_PORT}\\\"; ma=3600"
 else
