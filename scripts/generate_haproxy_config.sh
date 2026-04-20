@@ -379,7 +379,9 @@ generate_https_offloading_frontend_config() {
             auth_userlist=$(echo "$JSON_CONFIG" | jq -r --arg dom "$domain" '.domain_mappings[] | select(.frontend == "https-offloading") | select(.domains[] == $dom) | .basic_auth.userlist // empty' 2>/dev/null | head -1)
 
             if [ -n "$auth_userlist" ]; then
-                auth_config="${auth_config}    http-request auth realm \"Restricted Access\" if { var(txn.txnhost) -m str -i ${domain} } !{ http_auth(${auth_userlist}) }
+                auth_config="${auth_config}    http-request track-sc0 src if { var(txn.txnhost) -m str -i ${domain} }
+    http-request deny deny_status 429 if { var(txn.txnhost) -m str -i ${domain} } { sc_http_err_cnt(0) gt 10 }
+    http-request auth realm \"Restricted Access\" if { var(txn.txnhost) -m str -i ${domain} } !{ http_auth(${auth_userlist}) }
 "
             fi
 
