@@ -19,6 +19,7 @@ A self-contained Docker image that acts as a **TLS-terminating reverse proxy** f
     - [frontend](#frontend)
     - [domain_mappings](#domain_mappings)
     - [backends](#backends)
+    - [userlists](#userlists)
 5. [Environment Variables](#environment-variables)
 6. [Certificate Management](#certificate-management)
     - [HTTP Challenge](#http-challenge)
@@ -193,6 +194,15 @@ frontend:
 
 Maps domains to frontends and backends. **This is also the source of truth for which certificates acme.sh will issue** — every domain listed here gets a Let's Encrypt certificate automatically.
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `domains` | list | One or more hostnames |
+| `frontend` | string | `https-offloading` or `https-offloading-ip-protection` |
+| `backend` | string | Backend name from `backends[]` |
+| `basic_auth` | object | Optional. Add HTTP basic auth to these domains |
+| `basic_auth.userlist` | string | Name of a `userlists` entry |
+| `basic_auth.realm` | string | Browser prompt text (default: `Protected`) |
+
 ```yaml
 domain_mappings:
   - domains:
@@ -205,6 +215,14 @@ domain_mappings:
     - admin.example.com
     frontend: https-offloading-ip-protection
     backend: admin-app
+
+  - domains:
+    - phpmyadmin.example.com
+    frontend: https-offloading
+    backend: my-phpmyadmin
+    basic_auth:
+      userlist: admin-users
+      realm: "phpMyAdmin"
 ```
 
 ### `backends`
@@ -270,6 +288,63 @@ backends:
           rise: 1
           slowstart: "10s"
       - "10.0.0.11:8080 backup"
+```
+
+### `userlists`
+
+Defines HAProxy userlist blocks for HTTP basic authentication. Reference these from `domain_mappings[].basic_auth.userlist`.
+
+Passwords can be plain text (insecure, for testing only) or hashed using `crypt(3)` — SHA-256 or SHA-512 via `mkpasswd`.
+
+> [!IMPORTANT]
+> HAProxy uses the `crypt(3)` function to verify hashed passwords. You **must** use `mkpasswd` to generate hashes — tools like `sha256sum` or `openssl passwd -apr1` produce incompatible formats.
+
+**Generate a hashed password (run inside the container):**
+```bash
+mkpasswd -m sha-256 yourpassword
+# outputs: $5$salt$hash...
+
+mkpasswd -m sha-512 yourpassword
+# outputs: $6$salt$hash...
+```
+
+> [!IMPORTANT]
+> Password entries containing `$` **must be single-quoted** in the YAML. Double quotes or no quotes will cause the shell to expand `$...` as a variable, silently truncating the hash and breaking authentication.
+
+```yaml
+userlists:
+  admin-users:
+    users:
+      - 'admin password $5$salt$hashedpassword...'
+      - readonly insecure-password plaintext123
+```
+
+> [!NOTE]
+> Userlist blocks are written to the top of the generated config, before any frontends. HAProxy requires them to be defined at the top level.
+
+**Full basic auth example:**
+```yaml
+userlists:
+  admin-users:
+    users:
+      - 'admin password $5$salt$hashedpassword...'
+
+domain_mappings:
+  - domains:
+    - phpmyadmin.example.com
+    frontend: https-offloading
+    backend: my-phpmyadmin
+    basic_auth:
+      userlist: admin-users
+```
+
+This generates in the HAProxy config:
+```
+userlist admin-users
+    user admin password $5$salt$hashedpassword...
+
+# inside frontend https-offloading (before http-response directives):
+    http-request auth realm "Restricted Access" if { var(txn.txnhost) -m str -i phpmyadmin.example.com } !{ http_auth(admin-users) }
 ```
 
 ---

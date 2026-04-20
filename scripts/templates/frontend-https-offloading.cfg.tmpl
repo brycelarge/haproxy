@@ -16,6 +16,8 @@ frontend https-offloading
     http-request set-header X-Forwarded-Proto https if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
     http-request add-header X-Forwarded-For %[src] if { ssl_fc } !{ req.hdr(X-Forwarded-Proto) -m found }
 
+    # [HTTPS-FRONTEND-OFFLOADING AUTH PLACEHOLDER]
+
     # Remove server information headers
     http-response del-header ^Server:.*$
     http-response del-header ^X-Powered.*$

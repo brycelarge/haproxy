@@ -106,6 +106,20 @@ cat /scripts/templates/defaults.cfg.tmpl >> "$HAPROXY_CFG"
 # Generate HAProxy caching configuration
 cat /scripts/templates/cache.cfg.tmpl >> "$HAPROXY_CFG"
 
+# Generate userlist blocks from YAML (used for basic auth)
+if yq eval '.userlists' "$YAML_FILE" 2>/dev/null | grep -qv '^null$'; then
+    debug_log "[Generating userlist blocks..."
+    while IFS= read -r userlist_name; do
+        [ -z "$userlist_name" ] || [ "$userlist_name" = "null" ] && continue
+        echo "userlist ${userlist_name}" >> "$HAPROXY_CFG"
+        while IFS= read -r user_line; do
+            [ -z "$user_line" ] || [ "$user_line" = "null" ] && continue
+            printf '    user %s\n' "$user_line" >> "$HAPROXY_CFG"
+        done < <(yq eval ".userlists.${userlist_name}.users[]" "$YAML_FILE" 2>/dev/null)
+        echo >> "$HAPROXY_CFG"
+    done < <(yq eval '.userlists | keys | .[]' "$YAML_FILE" 2>/dev/null)
+fi
+
 MIXED_MODE_404_RESPONSE=""
 if [ "${MIXED_SSL_MODE}" != "true" ]; then
     MIXED_MODE_404_RESPONSE="
@@ -168,7 +182,7 @@ fi
 
 # Convert YAML to JSON and check for errors
 if ! JSON_CONFIG=$(yq eval -o=json "$YAML_FILE"); then
-    echo "[haproxy] Error: Failed to convert YAML configuration to JSON" | ts '%Y-%m-%d %H:%M:%S'
+    debug_log "[haproxy] Error: Failed to convert YAML configuration to JSON"
     exit 1
 fi
 
@@ -283,6 +297,7 @@ get_domain_regex() {
 # Function to generate HTTPS offloading frontend configuration
 generate_https_offloading_frontend_config() {
     local acl_config=""
+    local auth_config=""
     local backend_config=""
     local seen_certs=""
 
@@ -359,6 +374,15 @@ generate_https_offloading_frontend_config() {
             acl_config="${acl_config}    acl acl_${domain_clean} var(txn.txnhost) -m str -i ${domain}
 "
 
+            # Check for basic_auth on this domain mapping
+            local auth_userlist
+            auth_userlist=$(echo "$JSON_CONFIG" | jq -r --arg dom "$domain" '.domain_mappings[] | select(.frontend == "https-offloading") | select(.domains[] == $dom) | .basic_auth.userlist // empty' 2>/dev/null | head -1)
+
+            if [ -n "$auth_userlist" ]; then
+                auth_config="${auth_config}    http-request auth realm \"Restricted Access\" if { var(txn.txnhost) -m str -i ${domain} } !{ http_auth(${auth_userlist}) }
+"
+            fi
+
             # Store backend rule using both ACLs
             backend_config="${backend_config}    use_backend ${backend} if acl_${domain_clean} ${cert_acl_name}
 "
@@ -368,6 +392,14 @@ generate_https_offloading_frontend_config() {
     # Combine configs with proper line breaks
     local config="${acl_config}
 ${backend_config}"
+
+    if [ -n "$auth_config" ]; then
+        debug_log "Inserting auth config into HAPROXY_CFG"
+        sed -i "/# \[HTTPS-FRONTEND-OFFLOADING AUTH PLACEHOLDER\]/r /dev/stdin" "$HAPROXY_CFG" << EOF
+$auth_config
+EOF
+    fi
+    sed -i '/# \[HTTPS-FRONTEND-OFFLOADING AUTH PLACEHOLDER\]/d' "$HAPROXY_CFG"
 
     if [ -n "$config" ]; then
         debug_log "Inserting generated config into HAPROXY_CFG"
