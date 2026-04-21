@@ -151,8 +151,7 @@ fi
 # Binds to a unix socket; the TCP frontend above proxies to it with send-proxy-v2-ssl-cn
 # When MIXED_SSL_MODE=false, IP protection is handled inline in the main https-offloading frontend
 if [ "$FRONTEND_IP_PROTECTION" = "true" ] && [ "$MIXED_SSL_MODE" = "true" ] && [ "$HAS_CERTS" = "true" ]; then
-    envsubst '${ALT_SVC}' \
-        < /scripts/templates/frontend-https-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
+    cat /scripts/templates/frontend-https-offloading-ip-protection.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 
 PRIMARY_BIND="unix@/var/lib/haproxy/frontend-offloading.sock accept-proxy"
@@ -484,13 +483,14 @@ generate_backend_configs() {
     debug_log "Generating backend configurations"
     echo "$JSON_CONFIG" | jq -c '.backends[]' | while read -r backend; do
         # Single jq call to extract all scalar fields at once
-        read -r name mode is_ssl ssl_verify enable_h2 use_send_proxy has_cache < <(
+        read -r name mode is_ssl ssl_verify enable_h2 proto_h2 use_send_proxy has_cache < <(
             echo "$backend" | jq -r '[
                 .name,
                 (.mode // "http"),
                 (.ssl // false | tostring),
                 (.ssl_verify // false | tostring),
                 (.enable_h2 // false | tostring),
+                (.proto_h2 // false | tostring),
                 (.use_send_proxy // false | tostring),
                 (.cache == true | tostring)
             ] | @tsv'
@@ -638,7 +638,11 @@ generate_backend_configs() {
 
             h2_options=""
             if [ "$host_enable_h2" = "true" ]; then
-                h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
+                if [ "$proto_h2" = "true" ]; then
+                    h2_options=" proto h2"
+                else
+                    h2_options=" alpn h2 check-reuse-pool idle-ping 30s"
+                fi
             fi
 
             server_lines="${server_lines}    server ${name}-srv${server_count} ${host_address}${ssl_options:+ $ssl_options}${h2_options}${host_check:+ $host_check}${host_options:+ $host_options}${send_proxy:+ $send_proxy}

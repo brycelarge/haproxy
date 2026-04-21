@@ -237,7 +237,8 @@ Defines upstream servers.
 | `mode` | string | `http` | `http` or `tcp` |
 | `ssl` | bool | `false` | Connect to upstream over SSL |
 | `ssl_verify` | bool | `false` | Verify upstream SSL cert |
-| `enable_h2` | bool | `false` | Enable HTTP/2 (`alpn h2 check-reuse-pool idle-ping 30s`) |
+| `enable_h2` | bool | `false` | Enable HTTP/2 to upstream over TLS (`alpn h2 check-reuse-pool idle-ping 30s`) |
+| `proto_h2` | bool | `false` | Use cleartext HTTP/2 h2c (`proto h2`) — use with `enable_h2: true` for plaintext backends (e.g. gRPC, NetBird) |
 | `use_send_proxy` | bool | `false` | Send PROXY protocol to upstream |
 | `cache` | bool | `false` | Enable response cache for images |
 | `options` | list | — | Raw `option` directives |
