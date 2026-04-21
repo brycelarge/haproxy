@@ -7,8 +7,8 @@ defaults
     # [DEFAULTS PLACEHOLDER]
 
     # Our format here will produce 2021-01-01 08:00:01.565 +0200
-    log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %[ssl_fc_sni]"
-    error-log-format "[%[date,ltime(%Y-%m-%d %H:%M:%S)].%ms %[date,ltime(%z)]] %[var(txn.real_ip)] %ci:%cp %ft %ac/%fc %[fc_err_str]/%[ssl_fc_err,hex]/%[ssl_c_err]/%[ssl_c_ca_err]/%[ssl_fc_is_resumed] %[ssl_fc_sni]/%sslv/%sslc"
+    log-format '{"time":"%[date,ltime(%Y-%m-%dT%H:%M:%S%z)]","real_ip":"%[var(txn.real_ip)]","client":"%ci:%cp","frontend":"%ft","backend":"%b","server":"%s","timers":"%TR/%Tw/%Tc/%Tr/%Ta","status":%ST,"bytes":%B,"termination":"%tsc","connections":"%ac/%fc/%bc/%sc/%rc","queues":"%sq/%bq","sni":"%[ssl_fc_sni]","request":%{+Q}r}'
+    error-log-format '{"time":"%[date,ltime(%Y-%m-%dT%H:%M:%S%z)]","real_ip":"%[var(txn.real_ip)]","client":"%ci:%cp","frontend":"%ft","conn":"%ac/%fc","error":"%[fc_err_str]","ssl_fc_err":"%[ssl_fc_err,hex]","ssl_c_err":"%[ssl_c_err]","ssl_c_ca_err":"%[ssl_c_ca_err]","ssl_resumed":"%[ssl_fc_is_resumed]","sni":"%[ssl_fc_sni]","sslv":"%sslv","sslc":"%sslc"}'
 
     # Basic compression settings
     compression algo gzip deflate
