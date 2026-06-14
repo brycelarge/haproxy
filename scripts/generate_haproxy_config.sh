@@ -65,6 +65,13 @@ ACCOUNT_THUMBPRINT=$(cat "$ACME_THUMBPRINT_PATH")
 : "${QUIC_MAX_AGE:=86400}"
 : "${H3_29_SUPPORT:=false}"
 : "${MIXED_SSL_MODE:=false}"
+: "${QUIC_FE_STREAM_MAX_TOTAL:=10000}"
+: "${TLS_CERTIFICATE_COMPRESSION:=auto}"
+: "${H2_LOG_ERRORS:=connection}"
+: "${HAPROXY_BUFSIZE_SMALL:=4096}"
+: "${HAPROXY_BUFSIZE_LARGE:=32768}"
+: "${QUIC_CC_ALGO:=cubic}"
+export QUIC_FE_STREAM_MAX_TOTAL TLS_CERTIFICATE_COMPRESSION H2_LOG_ERRORS HAPROXY_BUFSIZE_SMALL HAPROXY_BUFSIZE_LARGE QUIC_CC_ALGO
 
 if [ -z "${HAPROXY_BIND_IP}" ]; then
     HAPROXY_BIND_IP="0.0.0.0"
@@ -97,7 +104,7 @@ fi
 export PIDFILE
 
 # Generate HAProxy global configuration
-envsubst '${ACCOUNT_THUMBPRINT} ${PIDFILE}' \
+envsubst '${ACCOUNT_THUMBPRINT} ${PIDFILE} ${QUIC_FE_STREAM_MAX_TOTAL} ${TLS_CERTIFICATE_COMPRESSION} ${H2_LOG_ERRORS} ${HAPROXY_BUFSIZE_SMALL} ${HAPROXY_BUFSIZE_LARGE}' \
     < /scripts/templates/global.cfg.tmpl >> "$HAPROXY_CFG"
 
 # Generate HAProxy defaults configuration
@@ -165,7 +172,7 @@ export PRIMARY_BIND
 if [ "$HAS_CERTS" = "true" ]; then
     export QUIC_BIND_PORT
     QUIC_BIND_PORT=$([ "$MIXED_SSL_MODE" = "true" ] && echo "8443" || echo "443")
-    envsubst '${PRIMARY_BIND} ${HAPROXY_BIND_IP} ${QUIC_BIND_PORT} ${ALT_SVC}' \
+    envsubst '${PRIMARY_BIND} ${HAPROXY_BIND_IP} ${QUIC_BIND_PORT} ${ALT_SVC} ${QUIC_CC_ALGO}' \
         < /scripts/templates/frontend-https-offloading.cfg.tmpl >> "$HAPROXY_CFG"
 fi
 

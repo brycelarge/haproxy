@@ -46,6 +46,7 @@ frontend https-offloading-ip-protection
     http-response del-header X-Compressed if !{ res.comp }
     http-response set-header Vary Accept-Encoding
 
+    filter comp-res
     compression offload
 
     # Placed by yaml domain_mappings

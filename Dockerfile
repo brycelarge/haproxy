@@ -1,4 +1,4 @@
-FROM alpine:3.21 AS openssl-builder
+FROM alpine:3.24 AS openssl-builder
 
 ENV OPENSSL_URL=https://github.com/quictls/openssl/archive/refs/tags/openssl-3.3.0-quic1.tar.gz
 ENV OPENSSL_SHA1SUM="1a2d16f2d6bad19ba0f62f3cde5efb1bd982c07e"
@@ -45,17 +45,17 @@ RUN \
     rm -rf /opt/quictls/ssl/certs && \
     ln -s /etc/ssl/certs /opt/quictls/ssl/certs
 
-FROM alpine:3.21 AS haproxy-builder
+FROM alpine:3.24 AS haproxy-builder
 COPY --from=openssl-builder /opt/quictls /opt/quictls
 
 # haproxy build environment variables
-ARG HAPROXY_BRANCH=3.3
-ARG HAPROXY_MINOR=3.3.0
-ARG HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
+ARG HAPROXY_BRANCH=3.4
+ARG HAPROXY_MINOR=3.4.0
+ARG HAPROXY_SHA256=72ee779970afaba4632151ffd93a5c2494c96d35aa7fc2c01335eca3af8a98fc
 # Set ENV variables from ARGs for use in RUN commands
-ENV HAPROXY_BRANCH=3.3
-ENV HAPROXY_MINOR=3.3.0
-ENV HAPROXY_SHA256=b3c8a87a5c1d52ab8b55e04898a5f5bb44e939c951012eba324a5c1ee46f630b
+ENV HAPROXY_BRANCH=${HAPROXY_BRANCH}
+ENV HAPROXY_MINOR=${HAPROXY_MINOR}
+ENV HAPROXY_SHA256=${HAPROXY_SHA256}
 
 COPY haproxy.tar.gz /tmp/haproxy.tar.gz
 
@@ -84,24 +84,9 @@ RUN \
     cd /usr/src/haproxy && \
     set -eux && \
     nproc="$(command -v getconf >/dev/null 2>&1 && getconf _NPROCESSORS_ONLN || grep -c ^processor /proc/cpuinfo || echo 1)" && \
-    PKG_CONFIG_PATH=/opt/quictls/lib/pkgconfig:/usr/lib/pkgconfig && \
-    LD_LIBRARY_PATH="/usr/lib" && \
-    # Core functionality
-    # USE_GETADDRINFO=1 \
-    # USE_THREAD=1 \
-    # SSL/TLS & QUIC
-    # Performance
-    # USE_TFO=1 \
-    # USE_EPOOL=1 \
-    # Lua
-    # Network namespace
-    # USE_NS=1 \
-    # Prometheus
-    # Regex
-    # Compression
-    # USE_ZLIB=1 \
-    # Link flags
-    HAPROXY_MAKE_ARGS='\
+    export PKG_CONFIG_PATH=/opt/quictls/lib/pkgconfig:/usr/lib/pkgconfig && \
+    export LD_LIBRARY_PATH=/opt/quictls/lib:/usr/lib && \
+    make -C /usr/src/haproxy -j "$nproc" all \
         TARGET=linux-musl \
         USE_OPENSSL=1 \
         USE_LIBCRYPT=1 \
@@ -114,20 +99,34 @@ RUN \
         USE_PROMEX=1 \
         USE_PCRE2=1 \
         USE_PCRE2_JIT=1 \
-        LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" \
-        EXTRA_OBJS=\
-    ' && \
-    eval "make -C /usr/src/haproxy -j $nproc all $HAPROXY_MAKE_ARGS" && \
-    eval "make -C /usr/src/haproxy install-bin $HAPROXY_MAKE_ARGS" && \
-    make -C /usr/src/haproxy TARGET=linux-musl install-man
+        LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" && \
+    make -C /usr/src/haproxy install-bin \
+        TARGET=linux-musl \
+        USE_OPENSSL=1 \
+        USE_LIBCRYPT=1 \
+        USE_QUIC=1 \
+        SSL_INC=/opt/quictls/include \
+        SSL_LIB=/opt/quictls/lib \
+        USE_LUA=1 \
+        LUA_INC=/usr/include/lua5.4 \
+        LUA_LIB=/usr/lib/lua5.4 \
+        USE_PROMEX=1 \
+        USE_PCRE2=1 \
+        USE_PCRE2_JIT=1 \
+        LDFLAGS="-L/opt/quictls/lib -Wl,-rpath,/opt/quictls/lib -L/usr/lib" && \
+    make -C /usr/src/haproxy TARGET=linux-musl install-man && \
+    /usr/local/sbin/haproxy -vv
 
 # start from fresh to remove all build layers and packages
-FROM brycelarge/alpine-baseimage:3.21
+FROM brycelarge/alpine-baseimage:3.24
 
-ARG HAPROXY_MINOR=3.3.0
+ARG HAPROXY_MINOR=3.4.0
 
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
+
+ENV PATH="/opt/quictls/bin:${PATH}" \
+    LD_LIBRARY_PATH=/opt/quictls/lib
 
 # Create HAProxy directories and copy error pages in final stage
 RUN mkdir -p /etc/haproxy/errors /etc/haproxy/certs
@@ -139,7 +138,6 @@ COPY ./conf.d/rsyslog.d/haproxy.conf /etc/rsyslog.d/49-haproxy.conf
 COPY ./conf.d/rsyslog.conf /etc/rsyslog.conf
 COPY ./conf.d/network.conf /etc/sysctl.d/network.conf
 COPY ./scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
-COPY scripts/ /scripts/
 
 # Set timezone environment variable
 ENV TZ=EST
@@ -160,7 +158,7 @@ RUN \
         libcap \
         iptables \
         tzdata && \
-    echo "**** Make rsyslog diretory ****" && \
+    echo "**** Make rsyslog directory ****" && \
     mkdir -p \
         /var/spool/rsyslog \
         /scripts && \
@@ -179,15 +177,13 @@ RUN \
         /var/lib/haproxy \
         /var/run/haproxy \
         /var/lib/haproxy/dev && \
-    chmod 770 /usr/local/bin/healthcheck.sh && \
+    chmod 755 /usr/local/bin/healthcheck.sh && \
     chown haproxy:haproxy /var/lib/haproxy && \
     chown haproxy:haproxy /var/run/haproxy && \
     chown haproxy:haproxy /etc/haproxy && \
     chmod 775 /var/lib/haproxy && \
     chmod 775 /var/run/haproxy && \
     chmod 775 /scripts && \
-    chmod +x /scripts/*.sh && \
-    chown -R haproxy:haproxy /scripts && \
     chmod 755 /var/lib/haproxy/dev && \
     chown haproxy:haproxy /var/lib/haproxy/dev && \
     touch /var/lib/haproxy/dev/log && \
@@ -205,7 +201,7 @@ RUN \
         --uid 1000 \
         acme && \
     adduser acme haproxy && \
-    echo "**** Add the tzdata package and configure for EST timezone ****" && \
+    echo "**** Add the tzdata package and configure timezone ****" && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV CONFIG_DIR=/config \
@@ -220,7 +216,8 @@ COPY scripts/ /scripts/
 
 RUN chmod +x /scripts/*.sh && \
     chown -R haproxy:haproxy /scripts && \
-    chmod 775 /scripts
+    chmod 775 /scripts && \
+    /usr/local/sbin/haproxy -vv
 
 LABEL maintainer="Bryce Large" \
       org.opencontainers.image.title="HAProxy with ACME" \

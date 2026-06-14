@@ -1,6 +1,6 @@
 frontend https-offloading
     bind            ${PRIMARY_BIND} ssl crt /etc/haproxy/certs/ strict-sni alpn h2
-    bind            quic4@${HAPROXY_BIND_IP}:${QUIC_BIND_PORT} ssl crt /etc/haproxy/certs/ alpn h3
+    bind            quic4@${HAPROXY_BIND_IP}:${QUIC_BIND_PORT} ssl crt /etc/haproxy/certs/ alpn h3 quic-cc-algo ${QUIC_CC_ALGO}
     mode            http
     log             global
     option          http-keep-alive
@@ -54,6 +54,7 @@ frontend https-offloading
     http-response del-header X-Compressed if !{ res.comp }
     http-response set-header Vary Accept-Encoding
 
+    filter comp-res
     compression offload
 
     # Placed by yaml domain_mappings

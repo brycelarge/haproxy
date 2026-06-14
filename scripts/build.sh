@@ -398,9 +398,9 @@ update_dockerfile() {
         -e "s|^(ARG[[:space:]]+HAPROXY_BRANCH=).*|\1${branch}|" \
         -e "s|^(ARG[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
         -e "s|^(ARG[[:space:]]+HAPROXY_SHA256=).*|\1${sha256}|" \
-        -e "s|^(ENV[[:space:]]+HAPROXY_BRANCH=).*|\1${branch}|" \
-        -e "s|^(ENV[[:space:]]+HAPROXY_MINOR=).*|\1${version}|" \
-        -e "s|^(ENV[[:space:]]+HAPROXY_SHA256=).*|\1${sha256}|" \
+        -e 's|^(ENV[[:space:]]+HAPROXY_BRANCH=).*|\1${HAPROXY_BRANCH}|' \
+        -e 's|^(ENV[[:space:]]+HAPROXY_MINOR=).*|\1${HAPROXY_MINOR}|' \
+        -e 's|^(ENV[[:space:]]+HAPROXY_SHA256=).*|\1${HAPROXY_SHA256}|' \
         -e "s|^(ENV[[:space:]]+HAPROXY_SRC_URL=).*|\1https://github.com/${GITHUB_REPO}/archive/refs/tags|" \
         "$DOCKERFILE" > "$tmpfile"
 

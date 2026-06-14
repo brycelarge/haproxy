@@ -29,4 +29,9 @@ global
 
     ssl-dh-param-file /config/acme/tls1-params/ffdhe2048
     tune.ssl.default-dh-param 2048
+    tune.ssl.certificate-compression ${TLS_CERTIFICATE_COMPRESSION}
+    tune.quic.fe.stream.max-total ${QUIC_FE_STREAM_MAX_TOTAL}
+    tune.h2.log-errors ${H2_LOG_ERRORS}
+    tune.bufsize.small ${HAPROXY_BUFSIZE_SMALL}
+    tune.bufsize.large ${HAPROXY_BUFSIZE_LARGE}
 
