@@ -51,7 +51,7 @@ COPY --from=openssl-builder /opt/quictls /opt/quictls
 # haproxy build environment variables
 ARG HAPROXY_BRANCH=3.4
 ARG HAPROXY_MINOR=3.4.0
-ARG HAPROXY_SHA256=72ee779970afaba4632151ffd93a5c2494c96d35aa7fc2c01335eca3af8a98fc
+ARG HAPROXY_SHA256=0897d2eb8e2be71196d5bbd1b25bebc3221813658df807d26c6b88972a971dc1
 # Set ENV variables from ARGs for use in RUN commands
 ENV HAPROXY_BRANCH=${HAPROXY_BRANCH}
 ENV HAPROXY_MINOR=${HAPROXY_MINOR}
@@ -166,7 +166,6 @@ RUN \
     set -eux && \
     addgroup --gid 99 --system haproxy && \
     adduser \
-        --disabled-password \
         --home /var/lib/haproxy \
         --ingroup haproxy \
         --no-create-home \
@@ -193,7 +192,6 @@ RUN \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     addgroup -g 1000 -S acme && \
     adduser \
-        --disabled-password \
         --home /config/acme \
         --ingroup acme \
         --no-create-home \

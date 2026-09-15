@@ -107,6 +107,9 @@ ARG HAPROXY_MINOR=3.3.0
 COPY --from=haproxy-builder /usr/local/sbin/haproxy /usr/local/sbin/haproxy
 COPY --from=haproxy-builder /opt/quictls /opt/quictls
 
+ENV PATH="/opt/quictls/bin:${PATH}" \
+    LD_LIBRARY_PATH=/opt/quictls/lib
+
 RUN mkdir -p /etc/haproxy/errors /etc/haproxy/certs
 COPY errors/ /etc/haproxy/errors/
 
@@ -122,7 +125,7 @@ ENV TZ=EST
 
 RUN \
     echo "**** Install runtime packages ****" && \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update && apt-get -o Dpkg::Options::="--force-confold" install -y --no-install-recommends \
         liblua5.4-0 \
         libpcre2-8-0 \
         libreadline8t64 \
@@ -132,6 +135,7 @@ RUN \
         gettext \
         socat \
         libcap2 \
+        libcap2-bin \
         iptables \
         tzdata \
         && rm -rf /var/lib/apt/lists/* && \
@@ -143,9 +147,8 @@ RUN \
     set -eux && \
     groupadd --gid 99 --system haproxy && \
     useradd \
-        --disabled-password \
         --home /var/lib/haproxy \
-        --ingroup haproxy \
+        --gid haproxy \
         --no-create-home \
         --system \
         --uid 99 \
@@ -172,9 +175,8 @@ RUN \
     echo "**** add acme user and add to haproxy group for serving certificates ****" && \
     groupadd -g 1000 -r acme && \
     useradd \
-        --disabled-password \
         --home /config/acme \
-        --ingroup acme \
+        --gid acme \
         --no-create-home \
         --system \
         --uid 1000 \
