@@ -6,6 +6,7 @@ INCLUDE_DEV=false
 USE_VERSION_2=false
 UPDATE_GITHUB=false
 TAG_AS_NEXT=false
+LOCAL_ONLY=false
 GITHUB_API="https://api.github.com"
 GITHUB_REPO="haproxy/haproxy"
 VERSION_CACHE_DIR="/tmp/haproxy_version_cache"
@@ -18,7 +19,7 @@ export HA_DEBUG=true
 DOCKERFILE="Dockerfile"
 
 # Parse command line arguments FIRST
-while getopts "v:r:d2unhf:" opt; do
+while getopts "v:r:d2unlhf:" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
         r) DOCKER_REPO="$OPTARG" ;;
@@ -26,6 +27,7 @@ while getopts "v:r:d2unhf:" opt; do
         2) USE_VERSION_2=true ;;
         u) UPDATE_GITHUB=true ;;
         n) TAG_AS_NEXT=true; INCLUDE_DEV=true ;;
+        l) LOCAL_ONLY=true ;;
         f) DOCKERFILE="$OPTARG" ;;
         h) usage ;;
         \?) usage ;;
@@ -43,6 +45,7 @@ usage() {
     echo "  -2            Use latest version 2.x"
     echo "  -u            Update version cache (ignore cached version)"
     echo "  -n            Tag latest dev version as 'next' and push"
+    echo "  -l            Build locally without pushing any tags"
     echo "  -h            Display this help message"
     echo ""
     echo "Examples:"
@@ -349,22 +352,26 @@ build_and_push() {
         --pull \
         -t "${docker_repo}:${version}" .
 
-    if [ "$tag_as_latest" = "true" ]; then
-        log "Tagging latest..."
-        docker tag "${docker_repo}:${version}" "${docker_repo}:latest"
-        docker push "${docker_repo}:latest"
+    if [ "$LOCAL_ONLY" = "true" ]; then
+        log "Successfully built local image ${docker_repo}:${version}"
+    else
+        if [ "$tag_as_latest" = "true" ]; then
+            log "Tagging latest..."
+            docker tag "${docker_repo}:${version}" "${docker_repo}:latest"
+            docker push "${docker_repo}:latest"
+        fi
+
+        if [ "$TAG_AS_NEXT" = "true" ]; then
+            log "Tagging as next..."
+            docker tag "${docker_repo}:${version}" "${docker_repo}:next"
+            docker push "${docker_repo}:next"
+        fi
+
+        log "Pushing version..."
+        docker push "${docker_repo}:${version}"
+
+        log "Successfully built and pushed version $version"
     fi
-
-    if [ "$TAG_AS_NEXT" = "true" ]; then
-        log "Tagging as next..."
-        docker tag "${docker_repo}:${version}" "${docker_repo}:next"
-        docker push "${docker_repo}:next"
-    fi
-
-    log "Pushing version..."
-    docker push "${docker_repo}:${version}"
-
-    log "Successfully built and pushed version $version"
 
     rm -f "$tarball"
 }
