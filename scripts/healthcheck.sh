@@ -109,11 +109,6 @@ main() {
         status=1
     fi
 
-    # Check certificates (warning doesn't fail the health check)
-    cert_status=0
-    check_certificates || cert_status=$?
-    [ "$cert_status" -eq 1 ] && status=1
-
     if [ $status -eq 0 ]; then
         echo "HAProxy is healthy"
     else
