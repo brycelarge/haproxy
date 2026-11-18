@@ -99,7 +99,7 @@ retry_count=0
 reload_success=false
 
 while [ $retry_count -lt $MAX_RETRIES ] && [ "$reload_success" = "false" ]; do
-    if s6-setuidgid haproxy haproxy -f /config/haproxy.cfg -p "$PID_FILE" -x "$SOCKET" -sf "$OLD_PID"; then
+    if s6-setuidgid haproxy haproxy -f /config/haproxy.cfg -x "$SOCKET" -sf "$OLD_PID"; then
         reload_success=true
     else
         retry_count=$((retry_count + 1))
