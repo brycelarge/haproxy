@@ -95,12 +95,8 @@ else
 fi
 export ALT_SVC
 
-if [ ! -f "/var/run/haproxy/haproxy.pid" ]; then
-    PIDFILE="
+PIDFILE="
     pidfile /var/run/haproxy/haproxy.pid"
-else
-    PIDFILE=""
-fi
 export PIDFILE
 
 # Generate HAProxy global configuration
@@ -229,7 +225,7 @@ elif [ "$FRONTEND_IP_PROTECTION" = "true" ]; then
     while read -r domain; do
         config="${config}    acl            https-offloading-ip-protection req.ssl_sni -i ${domain}
 "
-    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[] | select(.backend == "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
+    done < <(echo "$JSON_CONFIG" | jq -r '.https_frontend_rules[]? | select(.backend == "frontend-offloading-ip-protection") | select(.domains != null and (.domains | length > 0)) | .domains[]')
 fi
 
 # Function to generate HTTPS frontend configuration

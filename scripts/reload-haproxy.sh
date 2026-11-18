@@ -71,7 +71,7 @@ fi
 
 # Ensure old processes are terminated
 echo "[Haproxy] Checking for stale HAProxy processes..." | ts '%Y-%m-%d %H:%M:%S'
-STALE_PIDS=$(pgrep -f "haproxy -f /config/haproxy.cfg" | grep -v "$OLD_PID" || true)
+STALE_PIDS=$(pgrep -f "haproxy -f /config/haproxy.cfg" | grep -vx "$OLD_PID" || true)
 if [ -n "$STALE_PIDS" ]; then
     echo "[Haproxy] Found stale HAProxy processes (PIDs: $STALE_PIDS), terminating them" | ts '%Y-%m-%d %H:%M:%S'
     for pid in $STALE_PIDS; do
